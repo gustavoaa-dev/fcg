@@ -1,0 +1,5 @@
+.vs/
+FCG/
+**/bin/
+**/obj/
+*.csproj.user
