@@ -35,6 +35,17 @@ public class UserService
         await _userRepository.Adicionar(user);
         await _userRepository.Salvar();
 
+        return MapearParaResponse(user);
+    }
+
+    public async Task<IEnumerable<UsuarioResponseDTO>> ObterTodos()
+    {
+        var usuarios = await _userRepository.ObterTodos();
+        return usuarios.Select(MapearParaResponse).ToList();
+    }
+
+    private static UsuarioResponseDTO MapearParaResponse(User user)
+    {
         return new UsuarioResponseDTO
         {
             Id = user.Id,

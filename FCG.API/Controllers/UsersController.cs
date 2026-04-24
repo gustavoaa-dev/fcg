@@ -1,5 +1,6 @@
 using FCG.Application.DTOs;
 using FCG.Application.Services;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace FCG.API.Controllers;
@@ -13,6 +14,21 @@ public class UsersController : ControllerBase
     public UsersController(UserService userService)
     {
         _userService = userService;
+    }
+
+    [HttpGet]
+    [Authorize(Roles = "Admin")]
+    public async Task<ActionResult<IEnumerable<UsuarioResponseDTO>>> Get()
+    {
+        try
+        {
+            var usuarios = await _userService.ObterTodos();
+            return Ok(usuarios);
+        }
+        catch (Exception ex)
+        {
+            return BadRequest(new { mensagem = ex.Message });
+        }
     }
 
     [HttpPost]
