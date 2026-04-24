@@ -1,4 +1,5 @@
 using FCG.Domain.Enums;
+using System.Text.RegularExpressions;
 
 namespace FCG.Domain.Entities;
 
@@ -21,5 +22,21 @@ public class User
         Role = role;
         DataCadastro = DateTime.UtcNow;
         Jogos = new List<UserGame>();
+    }
+
+    public static bool EmailValido(string email)
+    {
+        if (string.IsNullOrWhiteSpace(email))
+            return false;
+
+        return Regex.IsMatch(email, @"^[^@\s]+@[^@\s]+\.[^@\s]+$");
+    }
+
+    public static bool SenhaValida(string senha)
+    {
+        if (string.IsNullOrWhiteSpace(senha))
+            return false;
+
+        return Regex.IsMatch(senha, @"^(?=.*[A-Za-z])(?=.*\d)(?=.*[^A-Za-z\d]).{8,}$");
     }
 }
