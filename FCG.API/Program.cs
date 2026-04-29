@@ -60,7 +60,10 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
         };
     });
 
+builder.Services.AddScoped<IGameRepository, GameRepository>();
 builder.Services.AddScoped<IUserRepository, UserRepository>();
+builder.Services.AddScoped<IUserGameRepository, UserGameRepository>();
+builder.Services.AddScoped<GameService>();
 builder.Services.AddScoped<UserService>();
 builder.Services.AddScoped<AuthService>();
 
