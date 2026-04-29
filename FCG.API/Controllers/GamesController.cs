@@ -5,17 +5,28 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace FCG.API.Controllers;
 
+/// <summary>
+/// Controlador responsável pelo catálogo de jogos.
+/// </summary>
 [ApiController]
 [Route("api/jogos")]
 public class GamesController : ControllerBase
 {
     private readonly GameService _gameService;
 
+    /// <summary>
+    /// Inicializa uma nova instância do controlador de jogos.
+    /// </summary>
     public GamesController(GameService gameService)
     {
         _gameService = gameService;
     }
 
+    /// <summary>
+    /// Lista todos os jogos cadastrados.
+    /// </summary>
+    /// <response code="200">Jogos retornados com sucesso.</response>
+    /// <response code="400">Falha ao processar a solicitação.</response>
     [HttpGet]
     [Authorize]
     public async Task<ActionResult<IEnumerable<GameResponseDTO>>> Get()
@@ -31,6 +42,12 @@ public class GamesController : ControllerBase
         }
     }
 
+    /// <summary>
+    /// Retorna os dados de um jogo pelo identificador.
+    /// </summary>
+    /// <response code="200">Jogo encontrado com sucesso.</response>
+    /// <response code="404">Jogo não encontrado.</response>
+    /// <response code="400">Falha ao processar a solicitação.</response>
     [HttpGet("{id:guid}")]
     [Authorize]
     public async Task<ActionResult<GameResponseDTO>> GetById(Guid id)
@@ -50,6 +67,11 @@ public class GamesController : ControllerBase
         }
     }
 
+    /// <summary>
+    /// Cria um novo jogo no catálogo.
+    /// </summary>
+    /// <response code="201">Jogo criado com sucesso.</response>
+    /// <response code="400">Dados inválidos para criação do jogo.</response>
     [HttpPost]
     [Authorize(Roles = "Admin")]
     public async Task<ActionResult<GameResponseDTO>> Post([FromBody] CriarGameDTO dto)
@@ -65,6 +87,12 @@ public class GamesController : ControllerBase
         }
     }
 
+    /// <summary>
+    /// Remove um jogo do catálogo pelo identificador.
+    /// </summary>
+    /// <response code="204">Jogo removido com sucesso.</response>
+    /// <response code="404">Jogo não encontrado.</response>
+    /// <response code="400">Falha ao processar a solicitação.</response>
     [HttpDelete("{id:guid}")]
     [Authorize(Roles = "Admin")]
     public async Task<IActionResult> Delete(Guid id)
