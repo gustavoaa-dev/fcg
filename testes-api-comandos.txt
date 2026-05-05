@@ -1,0 +1,152 @@
+BASE
+$baseUrl = "http://localhost:5071"
+
+
+TESTE 1 - CADASTRO VALIDO
+$body = @{
+  nome = "Usuario Teste"
+  email = "usuario.teste1@email.com"
+  senha = "SenhaForte@123"
+} | ConvertTo-Json
+
+Invoke-RestMethod -Method Post `
+  -Uri "$baseUrl/api/usuarios" `
+  -ContentType "application/json" `
+  -Body $body
+
+
+TESTE 2 - CADASTRO COM SENHA FRACA
+$body = @{
+  nome = "Usuario Fraco"
+  email = "usuario.fraco@email.com"
+  senha = "123"
+} | ConvertTo-Json
+
+try {
+  Invoke-RestMethod -Method Post `
+    -Uri "$baseUrl/api/usuarios" `
+    -ContentType "application/json" `
+    -Body $body
+} catch {
+  $_.Exception.Response.Content.ReadAsStringAsync().Result
+}
+
+
+TESTE 3 - CADASTRO COM EMAIL DUPLICADO
+$body = @{
+  nome = "Usuario Duplicado"
+  email = "gustavo@email.com"
+  senha = "SenhaForte@123"
+} | ConvertTo-Json
+
+try {
+  Invoke-RestMethod -Method Post `
+    -Uri "$baseUrl/api/usuarios" `
+    -ContentType "application/json" `
+    -Body $body
+} catch {
+  $_.Exception.Response.Content.ReadAsStringAsync().Result
+}
+
+
+TESTE 4 - LOGIN VALIDO E CAPTURA DO TOKEN
+$loginBody = @{
+  email = "gustavo@email.com"
+  senha = "Gustavo@123"
+} | ConvertTo-Json
+
+$loginResponse = Invoke-RestMethod -Method Post `
+  -Uri "$baseUrl/api/auth/login" `
+  -ContentType "application/json" `
+  -Body $loginBody
+
+$token = $loginResponse.token
+$token
+
+
+TESTE 5 - LOGIN COM SENHA INVALIDA
+$loginBody = @{
+  email = "gustavo@email.com"
+  senha = "SenhaErrada123"
+} | ConvertTo-Json
+
+try {
+  Invoke-RestMethod -Method Post `
+    -Uri "$baseUrl/api/auth/login" `
+    -ContentType "application/json" `
+    -Body $loginBody
+} catch {
+  $_.Exception.Response.Content.ReadAsStringAsync().Result
+}
+
+
+TESTE 6 - LISTAR JOGOS COM TOKEN
+Invoke-RestMethod -Method Get `
+  -Uri "$baseUrl/api/jogos" `
+  -Headers @{ Authorization = "Bearer $token" }
+
+
+TESTE 7 - LISTAR JOGOS SEM TOKEN
+try {
+  Invoke-RestMethod -Method Get `
+    -Uri "$baseUrl/api/jogos"
+} catch {
+  $_.Exception.Response.StatusCode.value__
+}
+
+
+TESTE 8 - CADASTRAR JOGO COM ADMIN
+$gameBody = @{
+  nome = "Jogo Terminal"
+  descricao = "Criado via terminal"
+  preco = 29.90
+} | ConvertTo-Json
+
+Invoke-RestMethod -Method Post `
+  -Uri "$baseUrl/api/jogos" `
+  -Headers @{ Authorization = "Bearer $token" } `
+  -ContentType "application/json" `
+  -Body $gameBody
+
+
+TESTE 9 - CADASTRAR JOGO SEM TOKEN
+$gameBody = @{
+  nome = "Jogo Sem Token"
+  descricao = "Teste sem autenticacao"
+  preco = 10.00
+} | ConvertTo-Json
+
+try {
+  Invoke-RestMethod -Method Post `
+    -Uri "$baseUrl/api/jogos" `
+    -ContentType "application/json" `
+    -Body $gameBody
+} catch {
+  $_.Exception.Response.StatusCode.value__
+}
+
+
+TESTE 10 - CADASTRAR JOGO INVALIDO
+$gameBody = @{
+  nome = "A"
+  descricao = ""
+  preco = 0
+} | ConvertTo-Json
+
+try {
+  Invoke-RestMethod -Method Post `
+    -Uri "$baseUrl/api/jogos" `
+    -Headers @{ Authorization = "Bearer $token" } `
+    -ContentType "application/json" `
+    -Body $gameBody
+} catch {
+  $_.Exception.Response.Content.ReadAsStringAsync().Result
+}
+
+
+TESTE 11 - REMOVER JOGO COM ADMIN
+$gameId = "COLE_O_ID_AQUI"
+
+Invoke-RestMethod -Method Delete `
+  -Uri "$baseUrl/api/jogos/$gameId" `
+  -Headers @{ Authorization = "Bearer $token" }

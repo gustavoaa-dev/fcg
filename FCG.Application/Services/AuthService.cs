@@ -51,7 +51,7 @@ public class AuthService
             new("Id", user.Id.ToString()),
             new("Email", user.Email),
             new("Nome", user.Nome),
-            new("Role", user.Role.ToString())
+            new(ClaimTypes.Role, user.Role.ToString())
         };
 
         var tokenDescriptor = new JwtSecurityToken(
