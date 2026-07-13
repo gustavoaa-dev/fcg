@@ -1,4 +1,4 @@
-# FCG - Facul Cloud Games
+# FCG - Fiap Cloud Games
 
 Plataforma de gerenciamento de usuários, catálogo de jogos e biblioteca pessoal.
 
