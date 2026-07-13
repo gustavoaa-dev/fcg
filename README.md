@@ -1,16 +1,38 @@
-# FCG
+# FCG - Facul Cloud Games
 
-## Descrição do projeto
+Plataforma de gerenciamento de usuários, catálogo de jogos e biblioteca pessoal.
 
-O `FCG` é uma API REST desenvolvida em .NET 8 para gerenciamento de usuários, catálogo de jogos e biblioteca pessoal de jogos. O projeto possui autenticação com JWT, controle de acesso por perfil (`Admin` e `Usuario`) e persistência em SQL Server com Entity Framework Core.
+## 🏗️ Arquitetura de Microsserviços (Fase 2)
 
-A solução está organizada em camadas:
+A plataforma evoluiu para uma arquitetura de microsserviços orientada a eventos:
 
-- `FCG.API`: camada de apresentação e configuração da aplicação
-- `FCG.Application`: serviços de aplicação e DTOs
-- `FCG.Domain`: entidades, enums e contratos
-- `FCG.Infrastructure`: acesso a dados, `DbContext`, repositórios e migrations
-- `FCG.Tests`: testes automatizados
+| Serviço | Repositório | Descrição |
+|---|---|---|
+| **UsersAPI** | [fcg-users-api](https://github.com/gustavoaa-dev/fcg-users-api) | Cadastro e autenticação JWT |
+| **CatalogAPI** | [fcg-catalog-api](https://github.com/gustavoaa-dev/fcg-catalog-api) | Catálogo de jogos e biblioteca |
+| **PaymentsAPI** | [fcg-payments-api](https://github.com/gustavoaa-dev/fcg-payments-api) | Processamento de pagamentos |
+| **NotificationsAPI** | [fcg-notifications-api](https://github.com/gustavoaa-dev/fcg-notifications-api) | Envio de notificações |
+| **Orquestração** | [fcg-orchestration](https://github.com/gustavoaa-dev/fcg-orchestration) | Docker Compose e Kubernetes |
+
+Os microsserviços se comunicam via **RabbitMQ** utilizando eventos assíncronos (`UserCreatedEvent`, `OrderPlacedEvent`, `PaymentProcessedEvent`).
+
+> Para instruções de execução com Docker e Kubernetes, consulte o [repositório de orquestração](https://github.com/gustavoaa-dev/fcg-orchestration).
+
+---
+
+## Monolito (Fase 1)
+
+Este repositório contém a versão monolítica original do projeto, que serviu como base para a decomposição em microsserviços.
+
+API REST em .NET 8 com autenticação JWT, controle de acesso por perfil e persistência em SQL Server.
+
+### Estrutura
+
+- `FCG.API` — camada de apresentação
+- `FCG.Application` — serviços e DTOs
+- `FCG.Domain` — entidades, enums e contratos
+- `FCG.Infrastructure` — EF Core, repositórios e migrations
+- `FCG.Tests` — testes automatizados
 
 ## Tecnologias utilizadas
 
