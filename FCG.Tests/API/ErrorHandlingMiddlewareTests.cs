@@ -53,10 +53,11 @@ public class ErrorHandlingMiddlewareTests
         var (statusCode, body) = ExecutarComExcecao(excecao);
 
         statusCode.Should().Be(statusEsperado);
-        var erro = JsonSerializer.Deserialize<ErroResponse>(body);
+        var erro = JsonSerializer.Deserialize<ErroResponse>(body, new JsonSerializerOptions(JsonSerializerDefaults.Web));
         erro!.StatusCode.Should().Be(statusEsperado);
         erro.Mensagem.Should().Be(mensagemEsperada);
         erro.Detalhe.Should().BeNull();
+        body.Should().Contain("\"statusCode\":");
     }
 
     [Fact]
@@ -65,7 +66,7 @@ public class ErrorHandlingMiddlewareTests
         var (statusCode, body) = ExecutarComExcecao(new InvalidOperationException("boom"), environment: "Development");
 
         statusCode.Should().Be(StatusCodes.Status500InternalServerError);
-        var erro = JsonSerializer.Deserialize<ErroResponse>(body);
+        var erro = JsonSerializer.Deserialize<ErroResponse>(body, new JsonSerializerOptions(JsonSerializerDefaults.Web));
         erro!.Mensagem.Should().Be("Ocorreu um erro interno no servidor.");
         erro.Detalhe.Should().NotBeNullOrEmpty();
     }

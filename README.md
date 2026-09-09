@@ -91,7 +91,7 @@ Exemplo da configuração atual:
 }
 ```
 
-### Chave secreta do JWT
+### 2.1 Chave secreta do JWT
 
 O segredo do JWT **não fica no repositório**. Configure-o:
 
@@ -106,9 +106,9 @@ O segredo do JWT **não fica no repositório**. Configure-o:
   ```
 A aplicação falha na inicialização se `Jwt:SecretKey` não estiver configurado.
 
-### Seed do usuário administrador
+### 2.2 Seed do usuário administrador
 
-No primeiro start, se não existir usuário com o e-mail de `AdminSeed:Email`, a aplicação cria um administrador com a senha `AdminSeed:Senha` (dev-only; sobrescreva via `AdminSeed__Email`/`AdminSeed__Senha` em produção).
+No primeiro start, a aplicação cria o administrador somente se **ambas** as configurações `AdminSeed:Email` e `AdminSeed:Senha` estiverem presentes e preenchidas — se `AdminSeed:Senha` estiver ausente ou vazio, o seed é desabilitado silenciosamente. Quando ativo, o usuário é criado apenas se ainda não existir outro com o mesmo e-mail de `AdminSeed:Email` (dev-only; sobrescreva via `AdminSeed__Email`/`AdminSeed__Senha` em produção).
 
 ### 3. Rodar as migrations
 
@@ -148,7 +148,7 @@ O Swagger fica disponível em:
 | `POST` | `/api/usuarios/{userId}/jogos` | Adiciona um jogo à biblioteca do usuário | Sim |
 | `DELETE` | `/api/usuarios/{userId}/jogos/{gameId}` | Remove um jogo da biblioteca do usuário | Sim |
 
-> Todas as respostas de erro usam o formato `{ statusCode, mensagem, detalhe, timestamp }` (`detalhe` apenas em Development). Status: 400 validação, 401 credenciais inválidas, 403 acesso negado, 404 não encontrado, 409 conflito, 500 erro interno.
+> Erros produzidos pela aplicação (controllers, serviços e validação do ModelState) usam o formato `{ statusCode, mensagem, detalhe, timestamp }` (`detalhe` presente apenas em Development). Status: 400 validação, 401 credenciais inválidas, 403 acesso negado, 404 não encontrado, 409 conflito, 500 erro interno. Desafios de autenticação/autorização do framework (401/403) e rotas inexistentes mantêm o corpo padrão do ASP.NET Core.
 
 ## Como rodar os testes
 

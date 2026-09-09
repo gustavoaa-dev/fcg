@@ -12,7 +12,7 @@ public static class AdminSeed
 {
     /// <summary>
     /// Garante a existência do usuário admin definido em AdminSeed:Email/AdminSeed:Senha.
-    /// Seed desabilitado quando AdminSeed:Email está vazio ou ausente.
+    /// Seed desabilitado quando AdminSeed:Email ou AdminSeed:Senha está vazio ou ausente.
     /// </summary>
     public static async Task EnsureCreatedAsync(IUserRepository userRepository, IConfiguration configuration)
     {

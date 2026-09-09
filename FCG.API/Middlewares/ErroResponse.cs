@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace FCG.API.Middlewares;
 
 /// <summary>
@@ -18,6 +20,7 @@ public class ErroResponse
     /// <summary>
     /// Detalhe adicional do erro quando disponível.
     /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? Detalhe { get; set; }
 
     /// <summary>

@@ -116,10 +116,24 @@ builder.Services.AddScoped<AuthService>();
 var app = builder.Build();
 
 // Garante a existência do usuário administrador configurado (idempotente).
+// Falhas de banco/seed não impedem a aplicação de subir (boot resiliente).
 using (var scope = app.Services.CreateScope())
 {
-    var userRepository = scope.ServiceProvider.GetRequiredService<IUserRepository>();
-    await AdminSeed.EnsureCreatedAsync(userRepository, app.Configuration);
+    try
+    {
+        var userRepository = scope.ServiceProvider.GetRequiredService<IUserRepository>();
+        await AdminSeed.EnsureCreatedAsync(userRepository, app.Configuration);
+    }
+    catch (Exception ex)
+    {
+        app.Logger.LogWarning(ex, "Não foi possível executar o seed do administrador. A aplicação continuará sem o usuário admin inicial.");
+    }
+}
+
+if (!app.Environment.IsDevelopment() &&
+    string.Equals(app.Configuration["AdminSeed:Email"], "gustavo@email.com", StringComparison.OrdinalIgnoreCase))
+{
+    app.Logger.LogWarning("AdminSeed:Email está com o valor padrão de desenvolvimento fora do Development — defina AdminSeed__Email e AdminSeed__Senha.");
 }
 
 // Configure the HTTP request pipeline.

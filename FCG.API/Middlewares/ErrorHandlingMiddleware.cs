@@ -8,6 +8,7 @@ namespace FCG.API.Middlewares;
 /// </summary>
 public class ErrorHandlingMiddleware
 {
+    private static readonly System.Text.Json.JsonSerializerOptions OpcoesJson = new(System.Text.Json.JsonSerializerDefaults.Web);
     private readonly RequestDelegate _next;
     private readonly ILogger<ErrorHandlingMiddleware> _logger;
     private readonly IHostEnvironment _environment;
@@ -58,7 +59,7 @@ public class ErrorHandlingMiddleware
                 Detalhe = _environment.IsDevelopment() ? ex.StackTrace : null
             };
 
-            var json = JsonSerializer.Serialize(erroResponse);
+            var json = JsonSerializer.Serialize(erroResponse, OpcoesJson);
             await context.Response.WriteAsync(json);
         }
     }
