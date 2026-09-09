@@ -1,5 +1,8 @@
+using System.Security.Claims;
 using FCG.Application.DTOs;
+using FCG.Application.Exceptions;
 using FCG.Application.Services;
+using FCG.Domain.Enums;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -25,40 +28,46 @@ public class BibliotecaController : ControllerBase
     /// <summary>
     /// Lista os jogos associados à biblioteca de um usuário.
     /// </summary>
-    /// <response code="200">Jogos do usuário retornados com sucesso.</response>
-    /// <response code="400">Falha ao processar a solicitação.</response>
     [HttpGet]
     [Authorize]
     public async Task<ActionResult<IEnumerable<GameResponseDTO>>> Get(Guid userId)
     {
-        try
-        {
-            var jogos = await _gameService.ObterJogosDoUsuario(userId);
-            return Ok(jogos);
-        }
-        catch (Exception ex)
-        {
-            return BadRequest(new { mensagem = ex.Message });
-        }
+        VerificarAcesso(userId);
+        var jogos = await _gameService.ObterJogosDoUsuario(userId);
+        return Ok(jogos);
     }
 
     /// <summary>
     /// Adiciona um jogo à biblioteca de um usuário.
     /// </summary>
-    /// <response code="201">Jogo adicionado à biblioteca com sucesso.</response>
-    /// <response code="400">Falha ao adicionar o jogo à biblioteca.</response>
     [HttpPost]
     [Authorize]
     public async Task<IActionResult> Post(Guid userId, [FromBody] AdicionarJogoUsuarioDTO dto)
     {
-        try
-        {
-            await _gameService.AdicionarJogoAoUsuario(userId, dto.GameId);
-            return Created(string.Empty, null);
-        }
-        catch (Exception ex)
-        {
-            return BadRequest(new { mensagem = ex.Message });
-        }
+        VerificarAcesso(userId);
+        await _gameService.AdicionarJogoAoUsuario(userId, dto.GameId);
+        return Created(string.Empty, null);
+    }
+
+    /// <summary>
+    /// Remove um jogo da biblioteca de um usuário.
+    /// </summary>
+    [HttpDelete("{gameId:guid}")]
+    [Authorize]
+    public async Task<IActionResult> Delete(Guid userId, Guid gameId)
+    {
+        VerificarAcesso(userId);
+        await _gameService.RemoverJogoDoUsuario(userId, gameId);
+        return NoContent();
+    }
+
+    private void VerificarAcesso(Guid userId)
+    {
+        if (User.IsInRole(UserRole.Admin.ToString()))
+            return;
+
+        var claimId = User.FindFirst("Id")?.Value;
+        if (claimId is null || !Guid.TryParse(claimId, out var tokenUserId) || tokenUserId != userId)
+            throw new AcessoNegadoException("Você não tem permissão para acessar a biblioteca de outro usuário.");
     }
 }
