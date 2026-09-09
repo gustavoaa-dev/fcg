@@ -5,6 +5,7 @@ using FCG.Infrastructure.Data;
 using FCG.Infrastructure.Repositories;
 using FCG.API.Middlewares;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi;
@@ -22,6 +23,28 @@ builder.Logging.AddFilter("Microsoft", LogLevel.Warning);
 builder.Logging.AddFilter("System", LogLevel.Warning);
 
 builder.Services.AddControllers();
+
+builder.Services.Configure<ApiBehaviorOptions>(options =>
+{
+    options.InvalidModelStateResponseFactory = context =>
+    {
+        var mensagens = context.ModelState.Values
+            .SelectMany(value => value.Errors)
+            .Select(erro => erro.ErrorMessage)
+            .Where(mensagem => !string.IsNullOrWhiteSpace(mensagem))
+            .ToList();
+
+        var erroResponse = new ErroResponse
+        {
+            StatusCode = StatusCodes.Status400BadRequest,
+            Mensagem = mensagens.Count == 0 ? "Dados inválidos." : string.Join(" ", mensagens),
+            Detalhe = null
+        };
+
+        return new BadRequestObjectResult(erroResponse);
+    };
+});
+
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(c =>
 {
