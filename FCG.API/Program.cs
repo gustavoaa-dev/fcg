@@ -1,3 +1,4 @@
+using FCG.API.Data;
 using FCG.Application.Services;
 using FCG.Domain.Interfaces;
 using FCG.Infrastructure.Data;
@@ -90,6 +91,13 @@ builder.Services.AddScoped<UserService>();
 builder.Services.AddScoped<AuthService>();
 
 var app = builder.Build();
+
+// Garante a existência do usuário administrador configurado (idempotente).
+using (var scope = app.Services.CreateScope())
+{
+    var userRepository = scope.ServiceProvider.GetRequiredService<IUserRepository>();
+    await AdminSeed.EnsureCreatedAsync(userRepository, app.Configuration);
+}
 
 // Configure the HTTP request pipeline.
 
