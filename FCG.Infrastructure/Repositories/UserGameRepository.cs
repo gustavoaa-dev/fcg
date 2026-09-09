@@ -33,6 +33,12 @@ public class UserGameRepository : IUserGameRepository
         await _context.UserGames.AddAsync(userGame);
     }
 
+    public Task Remover(UserGame userGame)
+    {
+        _context.UserGames.Remove(userGame);
+        return Task.CompletedTask;
+    }
+
     public async Task Salvar()
     {
         await _context.SaveChangesAsync();

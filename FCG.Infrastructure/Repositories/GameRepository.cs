@@ -29,12 +29,6 @@ public class GameRepository : IGameRepository
         await _context.Games.AddAsync(game);
     }
 
-    public Task Atualizar(Game game)
-    {
-        _context.Games.Update(game);
-        return Task.CompletedTask;
-    }
-
     public Task Remover(Game game)
     {
         _context.Games.Remove(game);

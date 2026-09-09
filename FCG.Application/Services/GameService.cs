@@ -1,4 +1,5 @@
 using FCG.Application.DTOs;
+using FCG.Application.Exceptions;
 using FCG.Domain.Entities;
 using FCG.Domain.Interfaces;
 
@@ -8,11 +9,13 @@ public class GameService
 {
     private readonly IGameRepository _gameRepository;
     private readonly IUserGameRepository _userGameRepository;
+    private readonly IUserRepository _userRepository;
 
-    public GameService(IGameRepository gameRepository, IUserGameRepository userGameRepository)
+    public GameService(IGameRepository gameRepository, IUserGameRepository userGameRepository, IUserRepository userRepository)
     {
         _gameRepository = gameRepository;
         _userGameRepository = userGameRepository;
+        _userRepository = userRepository;
     }
 
     public async Task<GameResponseDTO> CriarGame(CriarGameDTO dto)
@@ -38,7 +41,7 @@ public class GameService
     {
         var game = await _gameRepository.ObterPorId(id);
         if (game is null)
-            throw new InvalidOperationException("Jogo não encontrado.");
+            throw new EntidadeNaoEncontradaException("Jogo não encontrado.");
 
         return MapearParaResponse(game);
     }
@@ -47,7 +50,7 @@ public class GameService
     {
         var game = await _gameRepository.ObterPorId(id);
         if (game is null)
-            throw new InvalidOperationException("Jogo não encontrado.");
+            throw new EntidadeNaoEncontradaException("Jogo não encontrado.");
 
         await _gameRepository.Remover(game);
         await _gameRepository.Salvar();
@@ -55,13 +58,17 @@ public class GameService
 
     public async Task AdicionarJogoAoUsuario(Guid userId, Guid gameId)
     {
+        var usuario = await _userRepository.ObterPorId(userId);
+        if (usuario is null)
+            throw new EntidadeNaoEncontradaException("Usuário não encontrado.");
+
         var game = await _gameRepository.ObterPorId(gameId);
         if (game is null)
-            throw new InvalidOperationException("Jogo não encontrado.");
+            throw new EntidadeNaoEncontradaException("Jogo não encontrado.");
 
         var userGameExistente = await _userGameRepository.ObterPorIds(userId, gameId);
         if (userGameExistente is not null)
-            throw new InvalidOperationException("O usuário já possui este jogo.");
+            throw new ConflitoException("O usuário já possui este jogo.");
 
         var userGame = new UserGame(userId, gameId);
 
@@ -71,8 +78,26 @@ public class GameService
 
     public async Task<IEnumerable<GameResponseDTO>> ObterJogosDoUsuario(Guid userId)
     {
+        var usuario = await _userRepository.ObterPorId(userId);
+        if (usuario is null)
+            throw new EntidadeNaoEncontradaException("Usuário não encontrado.");
+
         var userGames = await _userGameRepository.ObterJogosDoUsuario(userId);
         return userGames.Select(userGame => MapearParaResponse(userGame.Game)).ToList();
+    }
+
+    public async Task RemoverJogoDoUsuario(Guid userId, Guid gameId)
+    {
+        var usuario = await _userRepository.ObterPorId(userId);
+        if (usuario is null)
+            throw new EntidadeNaoEncontradaException("Usuário não encontrado.");
+
+        var userGame = await _userGameRepository.ObterPorIds(userId, gameId);
+        if (userGame is null)
+            throw new EntidadeNaoEncontradaException("O jogo não está na biblioteca do usuário.");
+
+        await _userGameRepository.Remover(userGame);
+        await _userGameRepository.Salvar();
     }
 
     private static GameResponseDTO MapearParaResponse(Game game)
