@@ -63,4 +63,16 @@ public class AdminSeedTests
         BCrypt.Net.BCrypt.Verify("Admin@123", adminCriado.SenhaHash).Should().BeTrue();
         userRepositoryMock.Verify(repository => repository.Salvar(), Times.Once);
     }
+
+    [Fact]
+    public async Task EnsureCreatedAsync_SenhaVazia_DeveDesabilitarSeed()
+    {
+        var userRepositoryMock = new Mock<IUserRepository>();
+        var config = CriarConfiguracao("admin@fcg.com", null).Object;
+
+        await AdminSeed.EnsureCreatedAsync(userRepositoryMock.Object, config);
+
+        userRepositoryMock.Verify(repository => repository.Adicionar(It.IsAny<User>()), Times.Never);
+        userRepositoryMock.Verify(repository => repository.Salvar(), Times.Never);
+    }
 }

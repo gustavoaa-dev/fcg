@@ -20,11 +20,14 @@ public static class AdminSeed
         if (string.IsNullOrWhiteSpace(email))
             return;
 
+        var senha = configuration["AdminSeed:Senha"];
+        if (string.IsNullOrWhiteSpace(senha))
+            return;
+
         var usuarioExistente = await userRepository.ObterPorEmail(email);
         if (usuarioExistente is not null)
             return;
 
-        var senha = configuration["AdminSeed:Senha"] ?? string.Empty;
         var senhaHash = BCrypt.Net.BCrypt.HashPassword(senha);
         var admin = new User("Administrador", email, senhaHash, UserRole.Admin);
 
