@@ -2,6 +2,7 @@ using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Text;
 using FCG.Application.DTOs;
+using FCG.Application.Exceptions;
 using FCG.Domain.Interfaces;
 using Microsoft.Extensions.Configuration;
 using Microsoft.IdentityModel.Tokens;
@@ -26,11 +27,11 @@ public class AuthService
 
         var user = await _userRepository.ObterPorEmail(dto.Email);
         if (user is null)
-            throw new InvalidOperationException("Usuário não encontrado.");
+            throw new CredenciaisInvalidasException("E-mail ou senha inválidos.");
 
         var senhaValida = BCrypt.Net.BCrypt.Verify(dto.Senha, user.SenhaHash);
         if (!senhaValida)
-            throw new UnauthorizedAccessException("Senha inválida.");
+            throw new CredenciaisInvalidasException("E-mail ou senha inválidos.");
 
         var secretKey = _configuration["Jwt:SecretKey"]
             ?? throw new InvalidOperationException("A configuração Jwt:SecretKey não foi encontrada.");
