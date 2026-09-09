@@ -122,3 +122,5 @@ execução com TDD (`test-driven-development`) + `verification-before-completion
 - API: `dotnet run --project .\FCG.API\FCG.API.csproj` (Swagger em http://localhost:5071/swagger)
 - Testes: `dotnet test .\FCG.sln` (ou `.\FCG.Tests\FCG.Tests.csproj`)
 - Smoke tests manuais: `.\testes-api.ps1` (requer API rodando; assume usuário admin manual)
+
+**2026-09-09:** direção aprovada; spec em `docs/superpowers/specs/2026-09-09-correcao-monolito-design.md` e plano de implementação em `docs/superpowers/plans/2026-09-09-correcao-monolito.md`. Estado: em implementação.
