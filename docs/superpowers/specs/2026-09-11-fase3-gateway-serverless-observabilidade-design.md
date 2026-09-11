@@ -79,12 +79,15 @@ Em paralelo: `Prometheus` raspa `/metrics` de users/catalog; `Grafana` lê do Pr
 
 | Rota | Destino | Observação |
 |---|---|---|
-| `/api/auth/*` | users-api | rota anônima (login) |
-| `/api/usuarios*` | users-api | JWT validado no gateway |
-| `/api/jogos*` | catalog-api | inclui `/{id}/avaliacoes` (SP3) |
+| `POST /api/auth/login` | users-api | anônima |
+| `POST /api/usuarios` | users-api | **anônima** (cadastro) |
+| `GET/PUT/PATCH/DELETE /api/usuarios` | users-api | JWT validado no gateway |
+| `/api/jogos*` | catalog-api | JWT validado no gateway; inclui `/{id}/avaliacoes` (SP3) |
 | `/api/biblioteca*` | catalog-api | JWT validado no gateway |
 
-**Mudanças de topologia no cluster:** namespace `fcg`; Kong (`Deployment` + `Service` `LoadBalancer`); `users`/`catalog` como `ClusterIP` (NodePort removido); `notifications` deixa de ser container e passa a ser função com `ScaledObject` do KEDA (escala 0↔N); Prometheus + Grafana; MongoDB; Redis; segredos; probes em todos os workloads de API; imagens locais (`imagePullPolicy: IfNotPresent`).
+> As rotas de `/api/usuarios` são separadas **por método** no Kong: `POST` (cadastro) fica sem o plugin `jwt`; os demais métodos exigem token — caso contrário o cadastro quebraria.
+
+**Mudanças de topologia no cluster:** tudo permanece no **namespace `default`** (os 13 manifestos já estão nele; mudar de namespace exigiria FQDN em cada upstream); Kong (`Deployment` + `Service` `LoadBalancer`); `users`/`catalog` como `ClusterIP` (NodePort removido); `notifications` deixa de ser container e passa a ser função com `ScaledObject` do KEDA (escala 0↔N); Prometheus + Grafana; MongoDB; Redis; segredos; probes em todos os workloads de API; imagens locais (`imagePullPolicy: IfNotPresent`).
 
 ## 5. Sub-projetos
 
@@ -93,10 +96,10 @@ Cada sub-projeto terá seu **plano de implementação** próprio (skill `writing
 ### SP1 — API Gateway Kong
 
 - **Repositório:** `fcg-orchestration`.
-- **Cria:** `k8s/kong/kong-deployment.yaml` (Deployment + Service `LoadBalancer`), `k8s/kong/kong-configmap.yaml` (serviços, rotas, plugin `jwt`, consumer + credencial HS256), `k8s/kong/kong-secret.example.yaml` (modelo sem valores).
+- **Cria:** `k8s/kong/kong-deployment.yaml` (Deployment + Service `LoadBalancer` — proxy em 8000; Admin API em 8001 acessível apenas por `port-forward`), `k8s/kong/kong.yml.template` (config declarativa: services, rotas, plugin `jwt`, consumer com credencial HS256, segredo como `${JWT_SECRET}`) e `scripts/deploy-kong.ps1` (renderiza o template e recria o `Secret` `kong-declarative-config`).
 - **Altera:** `k8s/users-api-*.yaml` e `k8s/catalog-api-*.yaml` (`NodePort` → `ClusterIP`), `docker-compose.yml` (remove publicação das portas 5001–5004), `README.md` (topologia de entrada única, como subir e testar).
-- **Ajuste de integração obrigatório:** eliminar o 307 do `UseHttpsRedirection()` nos serviços quando atrás do gateway (configuração por ambiente).
-- **Segredo:** entra por variável de ambiente no Kong (vault `env`); se na implementação isso não se confirmar, plano B é renderizar a config declarativa de um template no start a partir do `Secret`.
+- **Ajuste de integração — verificado como desnecessário:** o `UseHttpsRedirection()` (`users` `Program.cs:117`, `catalog` `Program.cs:121`) **não emite 307 hoje**, porque nenhum manifesto ou Dockerfile define `ASPNETCORE_HTTPS_PORTS`/URLs `https` e não há `UseForwardedHeaders`. Regra que passa a valer: **não** definir porta HTTPS para os serviços e manter o upstream do Kong em `http://`.
+- **Segredo:** não entra no git. Fonte única é o `Secret users-api-secret` (chave `jwt-secret-key`) já existente no cluster; o script de deploy lê o valor, substitui no template e recria o `Secret kong-declarative-config`, montado no pod do Kong como arquivo de configuração declarativa (dispensa o vault de ambiente do Kong).
 - **Verificação:** `curl http://localhost:8000/api/jogos` sem token → 401; com token → 200; porta direta do serviço não responde mais; `kubectl get svc` mostra `ClusterIP`.
 
 ### SP2 — Observabilidade (Opção A)
@@ -126,7 +129,7 @@ Cada sub-projeto terá seu **plano de implementação** próprio (skill `writing
 
 ## 6. Fundações transversais (entram nos SPs, não são sub-projetos)
 
-- **Namespace `fcg`** para todos os recursos desta fase.
+- **Namespace:** tudo permanece no `default` (decisão verificada no planejamento do SP1 — os manifestos existentes já estão lá).
 - **Segredos:** `jwt-secret`, credenciais do SQL, do RabbitMQ, do Mongo e senha do admin do Grafana — sempre via `Secret` criado no cluster; no git apenas `*.example.yaml` + comando documentado. Antes de cada commit: conferir com `git grep` que nenhum valor real entrou.
 - **Imagens:** build local com `docker build`; `imagePullPolicy: IfNotPresent`; passo de rebuild documentado no README.
 - **Saúde:** `/health` + probes em users/catalog. O `/health` **não** precisa consultar o banco: a migração roda de forma síncrona antes de a aplicação começar a escutar, então o `readinessProbe` falha naturalmente até a migração terminar.
