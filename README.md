@@ -80,20 +80,35 @@ Exemplo da configuração atual:
     "DefaultConnection": "Server=localhost;Database=FCG;Trusted_Connection=True;TrustServerCertificate=True"
   },
   "Jwt": {
-    "SecretKey": "fcg-secret-key-2024-super-segura-256bits",
     "Issuer": "FCG.API",
     "Audience": "FCG.Client",
     "ExpiracaoHoras": 8
+  },
+  "AdminSeed": {
+    "Email": "gustavo@email.com",
+    "Senha": "Gustavo@123"
   }
 }
 ```
 
-Ajuste principalmente:
+### 2.1 Chave secreta do JWT
 
-- `ConnectionStrings:DefaultConnection`
-- `Jwt:SecretKey`
-- `Jwt:Issuer`
-- `Jwt:Audience`
+O segredo do JWT **não fica no repositório**. Configure-o:
+
+- **Desenvolvimento (user-secrets):**
+  ```powershell
+  dotnet user-secrets init --project .\FCG.API\FCG.API.csproj
+  dotnet user-secrets set "Jwt:SecretKey" "<seu-segredo>" --project .\FCG.API\FCG.API.csproj
+  ```
+- **Outros ambientes (variável de ambiente):**
+  ```powershell
+  $env:Jwt__SecretKey = "<seu-segredo>"
+  ```
+A aplicação falha na inicialização se `Jwt:SecretKey` não estiver configurado.
+
+### 2.2 Seed do usuário administrador
+
+No primeiro start, a aplicação cria o administrador somente se **ambas** as configurações `AdminSeed:Email` e `AdminSeed:Senha` estiverem presentes e preenchidas — se `AdminSeed:Senha` estiver ausente ou vazio, o seed é desabilitado silenciosamente. Quando ativo, o usuário é criado apenas se ainda não existir outro com o mesmo e-mail de `AdminSeed:Email` (dev-only; sobrescreva via `AdminSeed__Email`/`AdminSeed__Senha` em produção).
 
 ### 3. Rodar as migrations
 
@@ -131,6 +146,9 @@ O Swagger fica disponível em:
 | `DELETE` | `/api/jogos/{id}` | Remove um jogo | Sim, `Admin` |
 | `GET` | `/api/usuarios/{userId}/jogos` | Lista a biblioteca de jogos do usuário | Sim |
 | `POST` | `/api/usuarios/{userId}/jogos` | Adiciona um jogo à biblioteca do usuário | Sim |
+| `DELETE` | `/api/usuarios/{userId}/jogos/{gameId}` | Remove um jogo da biblioteca do usuário | Sim |
+
+> Erros produzidos pela aplicação (controllers, serviços e validação do ModelState) usam o formato `{ statusCode, mensagem, detalhe, timestamp }` (`detalhe` presente apenas em Development). Status: 400 validação, 401 credenciais inválidas, 403 acesso negado, 404 não encontrado, 409 conflito, 500 erro interno. Desafios de autenticação/autorização do framework (401/403) e rotas inexistentes mantêm o corpo padrão do ASP.NET Core.
 
 ## Como rodar os testes
 

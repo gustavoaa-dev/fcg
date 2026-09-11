@@ -1,4 +1,5 @@
 using FCG.Application.DTOs;
+using FCG.Application.Exceptions;
 using FCG.Domain.Entities;
 using FCG.Domain.Enums;
 using FCG.Domain.Interfaces;
@@ -27,7 +28,7 @@ public class UserService
 
         var usuarioExistente = await _userRepository.ObterPorEmail(dto.Email);
         if (usuarioExistente is not null)
-            throw new InvalidOperationException("Já existe um usuário cadastrado com este e-mail.");
+            throw new ConflitoException("Já existe um usuário cadastrado com este e-mail.");
 
         var senhaHash = BCrypt.Net.BCrypt.HashPassword(dto.Senha);
         var user = new User(dto.Nome, dto.Email, senhaHash, UserRole.Usuario);

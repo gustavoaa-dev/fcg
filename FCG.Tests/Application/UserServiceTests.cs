@@ -1,4 +1,5 @@
 using FCG.Application.DTOs;
+using FCG.Application.Exceptions;
 using FCG.Application.Services;
 using FCG.Domain.Entities;
 using FCG.Domain.Enums;
@@ -28,7 +29,7 @@ public class UserServiceTests
 
         var act = async () => await service.CriarUsuario(dto);
 
-        await act.Should().ThrowAsync<InvalidOperationException>();
+        await act.Should().ThrowAsync<ConflitoException>();
     }
 
     [Fact]

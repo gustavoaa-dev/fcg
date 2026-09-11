@@ -1,9 +1,11 @@
+using FCG.API.Data;
 using FCG.Application.Services;
 using FCG.Domain.Interfaces;
 using FCG.Infrastructure.Data;
 using FCG.Infrastructure.Repositories;
 using FCG.API.Middlewares;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi;
@@ -21,6 +23,28 @@ builder.Logging.AddFilter("Microsoft", LogLevel.Warning);
 builder.Logging.AddFilter("System", LogLevel.Warning);
 
 builder.Services.AddControllers();
+
+builder.Services.Configure<ApiBehaviorOptions>(options =>
+{
+    options.InvalidModelStateResponseFactory = context =>
+    {
+        var mensagens = context.ModelState.Values
+            .SelectMany(value => value.Errors)
+            .Select(erro => erro.ErrorMessage)
+            .Where(mensagem => !string.IsNullOrWhiteSpace(mensagem))
+            .ToList();
+
+        var erroResponse = new ErroResponse
+        {
+            StatusCode = StatusCodes.Status400BadRequest,
+            Mensagem = mensagens.Count == 0 ? "Dados inválidos." : string.Join(" ", mensagens),
+            Detalhe = null
+        };
+
+        return new BadRequestObjectResult(erroResponse);
+    };
+});
+
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(c =>
 {
@@ -90,6 +114,27 @@ builder.Services.AddScoped<UserService>();
 builder.Services.AddScoped<AuthService>();
 
 var app = builder.Build();
+
+// Garante a existência do usuário administrador configurado (idempotente).
+// Falhas de banco/seed não impedem a aplicação de subir (boot resiliente).
+using (var scope = app.Services.CreateScope())
+{
+    try
+    {
+        var userRepository = scope.ServiceProvider.GetRequiredService<IUserRepository>();
+        await AdminSeed.EnsureCreatedAsync(userRepository, app.Configuration);
+    }
+    catch (Exception ex)
+    {
+        app.Logger.LogWarning(ex, "Não foi possível executar o seed do administrador. A aplicação continuará sem o usuário admin inicial.");
+    }
+}
+
+if (!app.Environment.IsDevelopment() &&
+    string.Equals(app.Configuration["AdminSeed:Email"], "gustavo@email.com", StringComparison.OrdinalIgnoreCase))
+{
+    app.Logger.LogWarning("AdminSeed:Email está com o valor padrão de desenvolvimento fora do Development — defina AdminSeed__Email e AdminSeed__Senha.");
+}
 
 // Configure the HTTP request pipeline.
 
