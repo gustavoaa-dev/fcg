@@ -285,7 +285,7 @@ git commit -m "feat: adiciona mongo com pvc e redis sem persistencia ao cluster"
 - Produces (assinaturas usadas pelas Tasks 3 e 4):
   - `Review`: `Guid Id`, `Guid GameId`, `Guid UserId`, `int Nota`, `string? Comentario`, `List<string> Tags`, `DateTime DataCriacao`, `DateTime DataAtualizacao` (todos com get/set públicos — o driver precisa materializar).
   - `ReviewResumo`: `record ReviewResumo(int Total, double? NotaMedia)`.
-  - `IReviewRepository`: `Task<bool> UpsertAsync(Review review)` (true = criou), `Task<IEnumerable<Review>> ObterPorJogoAsync(Guid gameId)`, `Task<ReviewResumo> ObterResumoAsync(Guid gameId)`, `Task InicializarAsync()`.
+  - `IReviewRepository`: `Task<(Review Avaliacao, bool Criada)> UpsertAsync(Review review)` (o `bool` é true quando criou; a avaliação devolvida é a **persistida**), `Task<IEnumerable<Review>> ObterPorJogoAsync(Guid gameId)`, `Task<ReviewResumo> ObterResumoAsync(Guid gameId)`, `Task InicializarAsync()`.
   - DI: `IMongoClient` (singleton), `IReviewRepository` (scoped); configuração `Mongo:ConnectionString` (obrigatória) e `Mongo:DatabaseName` (default `fcg_catalog`).
 
 - [ ] **Step 1: Adicionar o pacote do driver**
@@ -341,8 +341,8 @@ namespace FCG.CatalogAPI.Domain.Interfaces;
 
 public interface IReviewRepository
 {
-    /// <summary>Insere ou substitui a avaliação do par (jogo, usuário). Retorna true quando criou.</summary>
-    Task<bool> UpsertAsync(Review review);
+    /// <summary>Insere ou substitui a avaliação do par (jogo, usuário) e devolve o documento persistido.</summary>
+    Task<(Review Avaliacao, bool Criada)> UpsertAsync(Review review);
 
     Task<IEnumerable<Review>> ObterPorJogoAsync(Guid gameId);
 
@@ -462,7 +462,7 @@ public class MongoReviewRepository : IReviewRepository
         _logger.LogInformation("Indice unico (gameId, userId) garantido na colecao {Colecao}.", NomeColecao);
     }
 
-    public async Task<bool> UpsertAsync(Review review)
+    public async Task<(Review Avaliacao, bool Criada)> UpsertAsync(Review review)
     {
         var filtro = Builders<ReviewDocument>.Filter.Eq(r => r.GameId, review.GameId)
                      & Builders<ReviewDocument>.Filter.Eq(r => r.UserId, review.UserId);
@@ -477,13 +477,21 @@ public class MongoReviewRepository : IReviewRepository
             .SetOnInsert(r => r.Id, review.Id)
             .SetOnInsert(r => r.DataCriacao, review.DataCriacao);
 
+        // UpdateOne e não FindOneAndUpdate porque só o UpdateResult informa se houve
+        // inserção (UpsertedId) — e é isso que decide 201 vs 200.
         var resultado = await _colecao.UpdateOneAsync(filtro, atualizacao, new UpdateOptions { IsUpsert = true });
-
         var criou = resultado.UpsertedId is not null;
+
+        // A resposta vem do documento PERSISTIDO, não do objeto em memória: na atualização
+        // o _id e a dataCriacao do documento são os originais, e devolver o objeto montado
+        // na aplicação faria o corpo do PUT contradizer o que o GET retorna.
+        var persistido = await _colecao.Find(filtro).FirstOrDefaultAsync()
+            ?? throw new InvalidOperationException("Avaliação não encontrada após o upsert.");
+
         _logger.LogInformation("Avaliacao {Acao} para o jogo {GameId} pelo usuario {UserId}.",
             criou ? "criada" : "atualizada", review.GameId, review.UserId);
 
-        return criou;
+        return (persistido.ParaEntidade(), criou);
     }
 
     public async Task<IEnumerable<Review>> ObterPorJogoAsync(Guid gameId)
@@ -751,8 +759,8 @@ public class ReviewService
             DataAtualizacao = agora
         };
 
-        var criada = await _reviewRepository.UpsertAsync(review);
-        return (Mapear(review), criada);
+        var (persistida, criada) = await _reviewRepository.UpsertAsync(review);
+        return (Mapear(persistida), criada);
     }
 
     public async Task<IEnumerable<ReviewResponseDTO>> ObterPorJogoAsync(Guid gameId)
@@ -896,7 +904,7 @@ curl.exe -s "http://localhost:18000/api/jogos/$gameId/avaliacoes/resumo" -H "Aut
 curl.exe -s -o NUL -w '%{http_code}' -X PUT -H "Content-Type: application/json" -d '@...\avaliacao.json' "http://localhost:18000/api/jogos/$gameId/avaliacoes"  # sem token: 401
 ```
 
-Também obrigatório: `{"nota":0,...}` e `{"nota":6,...}` → `400`; `gameId` inexistente → `404`; e **dois usuários diferentes** avaliando o mesmo jogo → `total: 2` no resumo (a prova de que o upsert é por par jogo/usuário, não global).
+Também obrigatório: `{"nota":0,...}` e `{"nota":6,...}` → `400`; `gameId` inexistente → `404`; **dois usuários diferentes** avaliando o mesmo jogo → `total: 2` no resumo (a prova de que o upsert é por par jogo/usuário, não global); e ler o **corpo do segundo `PUT`** para confirmar que o `id` e a `dataCriacao` são os mesmos que o `GET` devolve — o corpo do `PUT` tem que refletir o documento persistido, não o objeto montado na aplicação (foi exatamente essa divergência que a revisão pegou).
 
 - [ ] **Step 7: Conferir o documento no banco (prova da persistência poliglota)**
 
@@ -1317,6 +1325,6 @@ git commit -m "docs: documenta a persistencia poliglota e o cache de leitura"
 
 - **Cobertura da spec (§113-120):** avaliações com `MongoDB.Driver` e documento com `gameId`/`userId`/`nota`/`comentario`/`tags[]`/datas ✔ (Task 2); regras "jogo existe (404), nota 1-5 (400), upsert por usuário/jogo (D9), `userId` do claim" ✔ (Task 3, com verificação no Step 6); cache com `Microsoft.Extensions.Caching.StackExchangeRedis`, chaves e TTL 60s, invalidação no POST/DELETE e contadores `cache_hit`/`cache_miss` ✔ (Task 4, com verificação nos Steps 8-9); indisponibilidade do Redis degrada para o SQL com log ✔ (Task 4 Step 8); PVC obrigatório para o Mongo ✔ (Task 1); verificação declarada na spec ✔ (Task 5).
 - **Placeholders:** nenhum `TBD`/`TODO`. O único ponto em aberto deliberado é o plano B do construtor de `Game` (Task 4 Step 9), com o build/verificação de runtime como gate. A sobrecarga de agregação do driver (Task 2 Step 6) deixou de ser incerta: foi fixada na forma `PipelineDefinition<TInput, TOutput>.Create(IEnumerable<BsonDocument>, IBsonSerializer<TOutput>)`, confirmada na API oficial do driver.
-- **Consistência de tipos:** `Review`/`ReviewResumo`/`IReviewRepository` definidos na Task 2 são usados com os mesmos nomes e assinaturas nas Tasks 3 e 4 (`UpsertAsync` retorna `bool` = criou; `ObterResumoAsync` retorna `ReviewResumo`); `GameCacheItem`/`CachedGameRepository` só aparecem na Task 4; `cache_hit`/`cache_miss` são exatamente os nomes do spec (o prometheus-net exporta como `cache_hit_total`/`cache_miss_total`).
+- **Consistência de tipos:** `Review`/`ReviewResumo`/`IReviewRepository` definidos na Task 2 são usados com os mesmos nomes e assinaturas nas Tasks 3 e 4 (`UpsertAsync` devolve `(Review, bool)` — a avaliação persistida e se criou; `ObterResumoAsync` retorna `ReviewResumo`); `GameCacheItem`/`CachedGameRepository` só aparecem na Task 4; `cache_hit`/`cache_miss` são exatamente os nomes do spec (o prometheus-net exporta como `cache_hit_total`/`cache_miss_total`).
 - **Fora de escopo (D8), para não inflar:** paginação do catálogo, cache do resumo de avaliações, exclusão de avaliação própria, novas suítes de teste, refatorar os controllers existentes, Outbox, RS256, Mongo/Redis no `docker-compose.yml`.
 - **Follow-ups que este plano cria (registrar ao fim):** corrigir `Detalhe = ex.StackTrace` no `ErrorHandlingMiddleware` do catalog-api (vaza stack trace ao cliente); premissa de 1 réplica no scrape do Prometheus quando as APIs escalarem; `docker-compose.yml` sem Mongo/Redis.
