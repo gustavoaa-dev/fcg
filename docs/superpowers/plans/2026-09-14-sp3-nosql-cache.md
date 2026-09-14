@@ -931,7 +931,7 @@ git commit -m "feat: endpoints de avaliacao de jogos com upsert por usuario e re
 
 **Interfaces:**
 - Consumes: `GameRepository` (concreto, existente), `IGameRepository` (existente), `Game` (existente), Service `redis` (Task 1).
-- Produces: `cache_hit_total` e `cache_miss_total` no `/metrics`; chaves `catalog:games:all` e `catalog:game:{id}` com TTL de 60s; `IGameRepository` continua sendo a única abstração que o `GameService` vê.
+- Produces: `cache_hit` e `cache_miss` no `/metrics` (nomes crus, sem sufixo `_total` — conferido em runtime); chaves `catalog:games:all` e `catalog:game:{id}` com TTL de 60s; `IGameRepository` continua sendo a única abstração que o `GameService` vê.
 
 - [ ] **Step 1: Adicionar os pacotes do cache e das métricas**
 
@@ -1206,8 +1206,8 @@ kubectl rollout status deployment/catalog-api --timeout=300s
 kubectl port-forward svc/catalog-api 18081:80
 curl.exe -s -o NUL "http://localhost:18000/api/jogos" -H "Authorization: Bearer $token"   # miss
 curl.exe -s -o NUL "http://localhost:18000/api/jogos" -H "Authorization: Bearer $token"   # hit
-curl.exe -s http://localhost:18081/metrics | Select-String 'cache_(hit|miss)_total'
-# esperado: cache_miss_total >= 1 e cache_hit_total >= 1
+curl.exe -s http://localhost:18081/metrics | Select-String '^cache_(hit|miss)'
+# esperado: cache_miss >= 1 e cache_hit >= 1 (o prometheus-net 8.2.1 exporta o nome EXATO registrado)
 # 2) a segunda chamada é mais rápida (comparar Measure-Command das duas)
 # 3) invalidação: POST /api/jogos com token de Admin deve zerar a chave catalog:games:all
 kubectl exec deploy/redis -- redis-cli get catalog:games:all   # (nil) logo após o POST
@@ -1267,7 +1267,7 @@ Conteúdo obrigatório (em pt-BR, no tom do resto do arquivo):
 - **Por que Redis:** a listagem do catálogo vai ao SQL inteira a cada chamada; o cache corta isso com TTL de **60s** e chaves `catalog:games:all` (prefixo `/api/jogos`) e `catalog:game:{id}`. Invalidação explícita em POST/DELETE de jogo.
 - **Degradação graciosa:** com o Redis fora, a API responde igual (vai ao SQL) e loga `Falha ao ler a chave ...`. Com o **Mongo** fora, o catálogo continua funcionando — só os endpoints de avaliação falham.
 - **Endpoints de avaliação:** `PUT/GET /api/jogos/{id}/avaliacoes` e `GET .../resumo`, com o autor vindo do claim `Id` do token (não do corpo), nota 1-5 e upsert por usuário/jogo (`201` criando, `200` atualizando).
-- **Observabilidade:** `cache_hit_total`/`cache_miss_total` no `/metrics`, coletados pelo Prometheus do SP2.
+- **Observabilidade:** `cache_hit`/`cache_miss` no `/metrics` (sem sufixo `_total`), coletados pelo Prometheus do SP2.
 - **Segredos:** comando de criação do `mongo-secret` (nunca o valor real).
 - **Portas:** `mongo` (27017) e `redis` (6379) são `ClusterIP`, sem `port-forward` publicado no gateway; acesso local por `kubectl port-forward` quando precisar.
 - **Limitação conhecida:** o `docker-compose.yml` (caminho sem Kubernetes) não sobe Mongo/Redis — apenas o fluxo do cluster contempla esta fase; registrado como follow-up.
@@ -1325,6 +1325,6 @@ git commit -m "docs: documenta a persistencia poliglota e o cache de leitura"
 
 - **Cobertura da spec (§113-120):** avaliações com `MongoDB.Driver` e documento com `gameId`/`userId`/`nota`/`comentario`/`tags[]`/datas ✔ (Task 2); regras "jogo existe (404), nota 1-5 (400), upsert por usuário/jogo (D9), `userId` do claim" ✔ (Task 3, com verificação no Step 6); cache com `Microsoft.Extensions.Caching.StackExchangeRedis`, chaves e TTL 60s, invalidação no POST/DELETE e contadores `cache_hit`/`cache_miss` ✔ (Task 4, com verificação nos Steps 8-9); indisponibilidade do Redis degrada para o SQL com log ✔ (Task 4 Step 8); PVC obrigatório para o Mongo ✔ (Task 1); verificação declarada na spec ✔ (Task 5).
 - **Placeholders:** nenhum `TBD`/`TODO`. O único ponto em aberto deliberado é o plano B do construtor de `Game` (Task 4 Step 9), com o build/verificação de runtime como gate. A sobrecarga de agregação do driver (Task 2 Step 6) deixou de ser incerta: foi fixada na forma `PipelineDefinition<TInput, TOutput>.Create(IEnumerable<BsonDocument>, IBsonSerializer<TOutput>)`, confirmada na API oficial do driver.
-- **Consistência de tipos:** `Review`/`ReviewResumo`/`IReviewRepository` definidos na Task 2 são usados com os mesmos nomes e assinaturas nas Tasks 3 e 4 (`UpsertAsync` devolve `(Review, bool)` — a avaliação persistida e se criou; `ObterResumoAsync` retorna `ReviewResumo`); `GameCacheItem`/`CachedGameRepository` só aparecem na Task 4; `cache_hit`/`cache_miss` são exatamente os nomes do spec (o prometheus-net exporta como `cache_hit_total`/`cache_miss_total`).
+- **Consistência de tipos:** `Review`/`ReviewResumo`/`IReviewRepository` definidos na Task 2 são usados com os mesmos nomes e assinaturas nas Tasks 3 e 4 (`UpsertAsync` devolve `(Review, bool)` — a avaliação persistida e se criou; `ObterResumoAsync` retorna `ReviewResumo`); `GameCacheItem`/`CachedGameRepository` só aparecem na Task 4; `cache_hit`/`cache_miss` são exatamente os nomes do spec e saem no `/metrics` com esses nomes crus — o prometheus-net 8.2.1 **não** acrescenta `_total` (conferido em runtime; a suposição anterior do plano estava errada).
 - **Fora de escopo (D8), para não inflar:** paginação do catálogo, cache do resumo de avaliações, exclusão de avaliação própria, novas suítes de teste, refatorar os controllers existentes, Outbox, RS256, Mongo/Redis no `docker-compose.yml`.
 - **Follow-ups que este plano cria (registrar ao fim):** corrigir `Detalhe = ex.StackTrace` no `ErrorHandlingMiddleware` do catalog-api (vaza stack trace ao cliente); premissa de 1 réplica no scrape do Prometheus quando as APIs escalarem; `docker-compose.yml` sem Mongo/Redis.
