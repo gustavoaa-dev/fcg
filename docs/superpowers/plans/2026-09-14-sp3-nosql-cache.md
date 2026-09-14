@@ -498,7 +498,10 @@ public class MongoReviewRepository : IReviewRepository
 
     public async Task<ReviewResumo> ObterResumoAsync(Guid gameId)
     {
-        var pipeline = new BsonDocument[]
+        // O $group é montado como BsonDocument e a pipeline declara o serializador de saída
+        // explicitamente: PipelineDefinition<TInput, TOutput>.Create(IEnumerable<BsonDocument>,
+        // IBsonSerializer<TOutput>) é a sobrecarga documentada da API do driver.
+        var estagios = new BsonDocument[]
         {
             new("$match", new BsonDocument("gameId", gameId.ToString())),
             new("$group", new BsonDocument
@@ -509,7 +512,11 @@ public class MongoReviewRepository : IReviewRepository
             })
         };
 
-        var resultado = await _colecao.Aggregate<BsonDocument>(pipeline).FirstOrDefaultAsync();
+        var pipeline = PipelineDefinition<ReviewDocument, BsonDocument>.Create(
+            estagios,
+            BsonDocumentSerializer.Instance);
+
+        var resultado = await _colecao.Aggregate(pipeline).FirstOrDefaultAsync();
         if (resultado is null)
             return new ReviewResumo(0, null);
 
@@ -520,7 +527,14 @@ public class MongoReviewRepository : IReviewRepository
 }
 ```
 
-> Se o `Aggregate<BsonDocument>(BsonDocument[])` não compilar nesta versão do driver, troque pela forma explícita `PipelineDefinition<ReviewDocument, BsonDocument>.Create(pipeline)` — o build da imagem (Step 10) é o gate.
+Com estes `using` adicionais no topo do arquivo:
+
+```csharp
+using MongoDB.Bson.Serialization;
+using MongoDB.Bson.Serialization.Serializers;
+```
+
+> O `$avg` sobre um campo `int` devolve `double` no BSON, então o acesso correto é `ToDouble()` — um `ToInt32()` ali truncaria a média (3,5 viraria 3) e quebraria o resumo.
 
 - [ ] **Step 7: Registrar no DI e inicializar os índices em `Program.cs`**
 
@@ -1302,7 +1316,7 @@ git commit -m "docs: documenta a persistencia poliglota e o cache de leitura"
 ## Auto-review deste plano
 
 - **Cobertura da spec (§113-120):** avaliações com `MongoDB.Driver` e documento com `gameId`/`userId`/`nota`/`comentario`/`tags[]`/datas ✔ (Task 2); regras "jogo existe (404), nota 1-5 (400), upsert por usuário/jogo (D9), `userId` do claim" ✔ (Task 3, com verificação no Step 6); cache com `Microsoft.Extensions.Caching.StackExchangeRedis`, chaves e TTL 60s, invalidação no POST/DELETE e contadores `cache_hit`/`cache_miss` ✔ (Task 4, com verificação nos Steps 8-9); indisponibilidade do Redis degrada para o SQL com log ✔ (Task 4 Step 8); PVC obrigatório para o Mongo ✔ (Task 1); verificação declarada na spec ✔ (Task 5).
-- **Placeholders:** nenhum `TBD`/`TODO`. Os únicos pontos em aberto são deliberados e trazem a alternativa: a sobrecarga de `Aggregate` (Task 2 Step 6) e o plano B do construtor de `Game` (Task 4 Step 9) — ambos com o build/verificação de runtime como gate.
+- **Placeholders:** nenhum `TBD`/`TODO`. O único ponto em aberto deliberado é o plano B do construtor de `Game` (Task 4 Step 9), com o build/verificação de runtime como gate. A sobrecarga de agregação do driver (Task 2 Step 6) deixou de ser incerta: foi fixada na forma `PipelineDefinition<TInput, TOutput>.Create(IEnumerable<BsonDocument>, IBsonSerializer<TOutput>)`, confirmada na API oficial do driver.
 - **Consistência de tipos:** `Review`/`ReviewResumo`/`IReviewRepository` definidos na Task 2 são usados com os mesmos nomes e assinaturas nas Tasks 3 e 4 (`UpsertAsync` retorna `bool` = criou; `ObterResumoAsync` retorna `ReviewResumo`); `GameCacheItem`/`CachedGameRepository` só aparecem na Task 4; `cache_hit`/`cache_miss` são exatamente os nomes do spec (o prometheus-net exporta como `cache_hit_total`/`cache_miss_total`).
 - **Fora de escopo (D8), para não inflar:** paginação do catálogo, cache do resumo de avaliações, exclusão de avaliação própria, novas suítes de teste, refatorar os controllers existentes, Outbox, RS256, Mongo/Redis no `docker-compose.yml`.
 - **Follow-ups que este plano cria (registrar ao fim):** corrigir `Detalhe = ex.StackTrace` no `ErrorHandlingMiddleware` do catalog-api (vaza stack trace ao cliente); premissa de 1 réplica no scrape do Prometheus quando as APIs escalarem; `docker-compose.yml` sem Mongo/Redis.
