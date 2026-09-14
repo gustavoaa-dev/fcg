@@ -20,7 +20,10 @@
 - **`/metrics` e `/health` não entram no Kong** — o gateway só roteia `/api/auth`, `/api/usuarios`, `/api/jogos`, `/api/biblioteca`.
 - **Segredo do Grafana não vai para o git:** a senha do admin vive num `Secret` criado por comando documentado (`grafana-admin`), referenciado pelo Deployment.
 - **Grafana e Prometheus são acessados por `port-forward`** (Services `ClusterIP`): neste cluster o `LoadBalancer` entrega um IP de rede não alcançável do host (lição do SP1).
-- **Imagens locais:** após rebuild das APIs é obrigatório `kubectl rollout restart deploy/<serviço>` (`imagePullPolicy: IfNotPresent` reutilizaria a imagem antiga).
+- **Imagens locais com tag versionada:** os manifestos **não** usam `:latest`. Com `imagePullPolicy: IfNotPresent`, o kubelet reusa a imagem em cache e `kubectl rollout restart` recria o pod **na imagem antiga** — foi o que travou a Task 1 em `0/1` (as probes novas apontavam para `/health`, inexistente na imagem velha). Use `fcg-users-api:sp2` e `fcg-catalog-api:sp2` (verificado em runtime), e **cada rebuild futuro exige uma tag nova** (`:sp3`, …).
+- **Nomes das métricas (confirmados em runtime na Task 1):** `http_requests_received_total` (counter, labels `code`/`method`/`controller`/`action`/`endpoint`), `http_request_duration_seconds` (histogram) e `http_requests_in_progress` (gauge) — exatamente os usados nas queries do dashboard da Task 4.
+- **`using Prometheus;` é obrigatório** no `Program.cs` (o snippet do plano mostra só o pipeline; sem o using, `UseHttpMetrics()`/`MapMetrics()` não compilam).
+- **Scripts `.ps1` do controlador em ASCII puro:** o Windows PowerShell 5.1 lê arquivos sem BOM como ANSI e o travessão (U+2014) vira aspas tipográficas, quebrando o parser.
 - **Sem testes automatizados** nos serviços (não há projeto de teste): a verificação é por execução real (`kubectl`/`curl`) e é executada pelo **controlador** — os implementers editam arquivos e commitam, sem rodar `kubectl`/`docker`.
 - Branches: `fase3/sp2-observabilidade` em cada repositório tocado (`fcg-users-api`, `fcg-catalog-api`, `fcg-orchestration`).
 
@@ -504,13 +507,13 @@ data:
           "targets": [
             {
               "refId": "p95",
-              "legendFormat": "p95 {{instance}}",
-              "expr": "histogram_quantile(0.95, sum by (le, instance) (rate(http_request_duration_seconds_bucket[5m])))"
+              "legendFormat": "p95 {{endpoint}}",
+              "expr": "histogram_quantile(0.95, sum by (le, endpoint) (rate(http_request_duration_seconds_bucket{endpoint!=\"/health\"}[5m])))"
             },
             {
               "refId": "p50",
-              "legendFormat": "p50 {{instance}}",
-              "expr": "histogram_quantile(0.50, sum by (le, instance) (rate(http_request_duration_seconds_bucket[5m])))"
+              "legendFormat": "p50 {{endpoint}}",
+              "expr": "histogram_quantile(0.50, sum by (le, endpoint) (rate(http_request_duration_seconds_bucket{endpoint!=\"/health\"}[5m])))"
             }
           ]
         },
@@ -523,8 +526,8 @@ data:
           "targets": [
             {
               "refId": "rps",
-              "legendFormat": "{{instance}}",
-              "expr": "sum by (instance) (rate(http_requests_received_total[5m]))"
+              "legendFormat": "{{endpoint}}",
+              "expr": "sum by (endpoint) (rate(http_requests_received_total{endpoint!=\"/health\"}[5m]))"
             }
           ]
         },
@@ -538,7 +541,7 @@ data:
             {
               "refId": "status",
               "legendFormat": "{{code}}",
-              "expr": "sum by (code) (rate(http_requests_received_total[5m]))"
+              "expr": "sum by (code) (rate(http_requests_received_total{endpoint!=\"/health\"}[5m]))"
             }
           ]
         },
@@ -552,7 +555,21 @@ data:
             {
               "refId": "erros",
               "legendFormat": "% 5xx",
-              "expr": "100 * sum(rate(http_requests_received_total{code=~\"5..\"}[5m])) / clamp_min(sum(rate(http_requests_received_total[5m])), 1e-9)"
+              "expr": "100 * sum(rate(http_requests_received_total{code=~\"5..\",endpoint!=\"/health\"}[5m])) / clamp_min(sum(rate(http_requests_received_total{endpoint!=\"/health\"}[5m])), 1e-9) or vector(0)"
+            }
+          ]
+        },
+        {
+          "type": "timeseries",
+          "title": "Coleta do Prometheus (up)",
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "fieldConfig": { "defaults": { "unit": "short", "min": 0, "max": 1 }, "overrides": [] },
+          "targets": [
+            {
+              "refId": "up",
+              "legendFormat": "{{instance}}",
+              "expr": "up{job=\"fcg-apis\"}"
             }
           ]
         }
@@ -699,10 +716,10 @@ Inserir, entre o fim da seção do gateway e `## Estrutura de arquivos`:
 
 A stack escolhida para esta fase é a **Opção A — Prometheus + Grafana** (código aberto, sem custo e sem dependência de conta em nuvem), implantada por manifestos Kubernetes neste repositório.
 
-- **Instrumentação:** `users-api` e `catalog-api` expõem `/metrics` (biblioteca `prometheus-net`) e `/health`. O `UseHttpMetrics()` é registrado antes dos demais middlewares, então erros de autenticação e exceções também entram nas métricas.
+- **Instrumentação:** `users-api` e `catalog-api` expõem `/metrics` (biblioteca `prometheus-net`) e `/health`. O `UseHttpMetrics()` está posicionado de forma que os `401`/`403` de `[Authorize]` e as exceções tratadas pelo `ErrorHandlingMiddleware` também entram nas métricas (posição relativa exata verificada na execução — ver "Pós-execução").
 - **Coleta:** o Prometheus raspa `users-api:80` e `catalog-api:80` a cada 15s (`k8s/prometheus-configmap.yaml`) e guarda 7 dias de dados em volume persistente (`prometheus-data`, 2Gi).
-- **Visualização:** o Grafana sobe com datasource e dashboard **provisionados por ConfigMap** (`k8s/grafana-*.yaml`): o dashboard **FCG - APIs** traz latência (p50/p95), requisições por segundo, requisições por status code e taxa de erro 5xx.
-- **Exposição:** nenhum dos dois é publicado pelo gateway — ambos são `ClusterIP` e o acesso é por `port-forward` (veja abaixo). O Kong só roteia `/api/*`, então `/metrics` e `/health` não saem do cluster.
+- **Visualização:** o Grafana sobe com datasource e dashboard **provisionados por ConfigMap** (`k8s/grafana-*.yaml`): o dashboard **FCG - APIs** traz latência (p50/p95) **por rota**, requisições por segundo por rota, requisições por status code, taxa de erro 5xx e um painel de coleta (`up`) por alvo; os quatro painéis de tráfego excluem as probes (`endpoint!="/health"`).
+- **Exposição:** nenhum dos dois é publicado pelo gateway — ambos são `ClusterIP` e o acesso é por `port-forward` (veja abaixo). O Kong só roteia quatro prefixos (`/api/auth`, `/api/usuarios`, `/api/jogos`, `/api/biblioteca`), então `/metrics` e `/health` não saem do cluster.
 - **Senha do Grafana:** o admin vem do `Secret` `grafana-admin` (nunca no git). Crie antes do apply:
   ```powershell
   kubectl create secret generic grafana-admin --from-literal=admin-password='<sua-senha>' --dry-run=client -o yaml | kubectl apply -f -
@@ -734,8 +751,10 @@ kubectl get svc users-api catalog-api prometheus grafana
 # alvos do Prometheus
 kubectl port-forward svc/prometheus 19090:9090
 curl.exe -s "http://localhost:19090/api/v1/targets?state=active" | Select-String '"health":"up"'
-# consulta usada pelo painel de latência
-curl.exe -s "http://localhost:19090/api/v1/query?query=histogram_quantile(0.95,%20sum%20by%20(le,%20instance)%20(rate(http_request_duration_seconds_bucket%5B5m%5D)))" | Select-String "success"
+# consulta usada pelo painel de latência (por rota, sem as probes)
+curl.exe -s "http://localhost:19090/api/v1/query?query=histogram_quantile(0.95,%20sum%20by%20(le,%20endpoint)%20(rate(http_request_duration_seconds_bucket%7Bendpoint!=%22/health%22%7D%5B5m%5D)))" | Select-String "success"
+# painel de coleta
+curl.exe -s "http://localhost:19090/api/v1/query?query=up%7Bjob=%22fcg-apis%22%7D" | Select-String '"value"'
 ```
 Expected: os 4 pods `Running`/`Ready`, PVC `Bound`, Services presentes, **dois alvos `up`** e a consulta de latência retornando dados após gerar tráfego.
 
@@ -754,3 +773,36 @@ git commit -m "docs: documenta a stack de observabilidade (prometheus e grafana)
 - **Placeholders:** nenhum — todos os YAMLs, o dashboard JSON e os comandos estão completos; os valores exatos (versões `8.2.1`, `v3.1.0`, `11.4.0`, portas, nomes de recursos) foram verificados no NuGet e no registry.
 - **Consistência de nomes:** `users-api`/`catalog-api` (Services e labels `app:`), `prometheus`/`grafana`, `prometheus-config`/`prometheus-data`/`prometheus`, `grafana-provisioning`/`grafana-dashboards`/`grafana-admin` — usados igualmente nas Tasks 3, 4 e 5.
 - **Riscos declarados:** PVC do `local-path` sem permissão para o usuário 65534 (fallback no Step 3 da Task 3); datasource uid no painel (nota no Step 2 da Task 4); `imagePullPolicy: IfNotPresent` exigindo `rollout restart` após rebuild (constraint global); Grafana/Prometheus acessíveis apenas por `port-forward` (constraint global).
+
+---
+
+## Pós-execução (executado em 14/09/2026)
+
+O plano foi executado por completo em 3 repositórios (`fcg-users-api`, `fcg-catalog-api`, `fcg-orchestration`), com revisão por tarefa e revisão final de branch inteira, seguida de uma onda de correção. O que segue registra **o que a execução real corrigiu no plano** e o que fica como dívida.
+
+### Resultado
+
+- **Imagens:** `fcg-users-api:sp2` (build de `9c27722`) e `fcg-catalog-api:sp2` (build de `d5ed30a`) — a tag `:latest` **não** é reaproveitada (ver lição 1).
+- **PRs abertos:** `fcg-users-api#1`, `fcg-catalog-api#1` e `fcg-orchestration#2`. Ordem de merge obrigatória: **as duas APIs antes do `fcg-orchestration`**, que fixa as tags `:sp2` buildadas a partir daquelas branches.
+- **Evidência de aceite (Docker Desktop Kubernetes, `default`):** 9 pods `1/1`; PVC `prometheus-data` `Bound`; os 2 alvos do job `fcg-apis` (`users-api:80`, `catalog-api:80`) em `up`, além do self-scrape; dashboard **FCG - APIs** provisionado com **5 painéis** e relido pelo provider **sem restart de pod**; `up{job="fcg-apis"}` = 1 nos dois alvos; gateway preservado (`GET /api/jogos` sem token = `401`; `/metrics`, `/health` e `/api/qualquer-coisa` pelo gateway = `404`).
+
+### Lições do runtime (correções feitas no plano depois da execução)
+
+1. **`:latest` + `imagePullPolicy: IfNotPresent` = rollout travado.** Na Task 1 os pods ficaram `0/1`: o `startupProbe` matava o container (exit 0) porque o kubelet subiu a imagem em cache, sem `/health`. A Task 1 passou a exigir **tag versionada** (`:sp2`) e o README explica o procedimento de rebuild. Próximo rebuild deve usar `:sp3` — nunca reusar `:sp2`.
+2. **O dashboard precisa agrupar por rota, não por serviço, e precisa excluir as probes.** O esboço da Task 4 agregava por `instance` e contava tudo: medido no cluster, as probes `/health` somavam **1533** requisições contra **38** de negócio na mesma amostra (**97,5% de ruído**). Com o filtro `endpoint!="/health"`, os painéis passaram a mostrar tráfego real — p95 de `api/auth/login` **0,24s** (p50 1,9ms), `api/jogos` 25ms, `api/usuarios` 8ms.
+3. **Formato das labels de rota.** A label `endpoint` traz o **RoutePattern** do ASP.NET, **sem a barra inicial** (`api/jogos`, `api/usuarios`, `api/auth/login`); só a probe mantém a barra (`endpoint="/health"`). Qualquer filtro por `endpoint` tem que casar com esses literais exatos — um filtro `/api/...` casaria zero séries.
+4. **Série fantasma `endpoint=""`.** Requisição a rota inexistente **dentro** da API gera série com `endpoint` vazio (aparece como linha sem legenda, com 0/NaN). É artefato conhecido e aceito; não alcança os fluxos documentados (de fora do cluster o Kong responde `404` antes de proxear).
+5. **`curl.exe` + JSON inline no PowerShell.** `-d '{"email":"..."}'` perde as aspas ao passar por um executável nativo e a API responde `400` de payload inválido. Nos scripts de verificação o corpo vai **por arquivo** (`-d '@corpo.json'`); os exemplos do README usam `Invoke-RestMethod`/`bash` e não têm o problema.
+6. **Contrato do login (401 vs 400).** Senha incorreta de usuário **existente** = `401` (é esse o `401` que aparece no painel de status code); e-mail inexistente = `400`. `401` rejeitado **no gateway** (sem token) não aparece nas métricas, porque o Kong responde antes de encaminhar e não é instrumentado.
+7. **Semântica de reload do Grafana (assimétrica).** O ConfigMap do **dashboard** propaga sozinho (provider `type: file`, `updateIntervalSeconds: 30`, montagem de ConfigMap sem `subPath`); o ConfigMap de **provisioning** (datasource/provider) só é lido no boot e exige `kubectl rollout restart deployment/grafana`. Para o Prometheus, qualquer mudança no scrape exige restart (não há sidecar de reload).
+8. **`strategy: Recreate` no Prometheus é obrigatório, não preferência:** o PVC é `ReadWriteOnce` e num rolling update o pod novo ficaria preso esperando o volume.
+
+### Follow-ups registrados (fora do escopo do SP2)
+
+- **Comentário de `Program.cs`** (`users-api`/`catalog-api`) ainda afirma a ordem imprecisa dos middlewares; corrigir custa rebuild + tag nova.
+- **Health checks separados** (`/health/live` e `/health/ready`): hoje `/health` é `Healthy` incondicional e o `liveness` usa o mesmo endpoint — uma dependência fora do ar deixa o pod `Ready`.
+- **`payments-api`:** receber tag versionada (e avaliar probes) quando for tocado; `notifications-api` sai no SP4.
+- **Instrumentar o Kong:** `401`/`5xx` rejeitados no gateway são invisíveis ao Prometheus; hoje o painel cobre apenas o que chega às APIs.
+- **Alertas (Alertmanager)** e revisão do `limits.memory` do Prometheus quando a cardinalidade crescer (SP3 expõe contadores de cache).
+- **Premissa de 1 réplica por API** no scrape estático por Service (`users-api:80`): com 2+ réplicas o Prometheus raspa um pod aleatório por scrape e as réplicas colapsam numa série — migrar para Service headless + `dns_sd_configs` ao escalar.
+- **Rotação da senha do `grafana-admin`** exige recriar o pod: `GF_SECURITY_ADMIN_PASSWORD` só é aplicada quando o `grafana.db` não existe, e o `emptyDir` sobrevive a restart de container.
