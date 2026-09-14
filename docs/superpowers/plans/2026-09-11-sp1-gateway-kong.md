@@ -6,7 +6,7 @@
 
 **Architecture:** Kong em modo declarativo/DB-less (`KONG_DATABASE=off` + `KONG_DECLARATIVE_CONFIG`), com a configuração (services/routes/plugins/consumer) versionada como *template* no repositório de orquestração; o segredo JWT entra num `Secret` do Kubernetes gerado em tempo de deploy a partir do segredo que já existe no cluster (`users-api-secret`). Os serviços passam de `NodePort` para `ClusterIP` e o Kong vira `LoadBalancer` (Docker Desktop → `localhost:8000`).
 
-**Tech Stack:** Kong Gateway 3.x (imagem `kong:3.10`), Kubernetes do Docker Desktop, `kubectl`, PowerShell para o script de render do segredo, YAML declarativo do Kong.
+**Tech Stack:** Kong Gateway 3.x (imagem `kong:3.9` — a tag `kong:3.10` **não existe** no Docker Hub; verificado em runtime), Kubernetes do Docker Desktop, `kubectl`, PowerShell para o script de render do segredo, YAML declarativo do Kong.
 
 **Spec:** `docs/superpowers/specs/2026-09-11-fase3-gateway-serverless-observabilidade-design.md` (SP1)
 
@@ -217,7 +217,7 @@ spec:
     spec:
       containers:
         - name: kong
-          image: kong:3.10
+          image: kong:3.9
           imagePullPolicy: IfNotPresent
           env:
             - name: KONG_DATABASE
@@ -227,7 +227,9 @@ spec:
             - name: KONG_PROXY_LISTEN
               value: 0.0.0.0:8000
             - name: KONG_ADMIN_LISTEN
-              value: 0.0.0.0:8001
+              value: 127.0.0.1:8001
+            - name: KONG_STATUS_LISTEN
+              value: 0.0.0.0:8100
             - name: KONG_PROXY_ACCESS_LOG
               value: /dev/stdout
             - name: KONG_ADMIN_ACCESS_LOG
@@ -241,18 +243,23 @@ spec:
           ports:
             - name: proxy
               containerPort: 8000
-            - name: admin
-              containerPort: 8001
+            - name: status
+              containerPort: 8100
+          startupProbe:
+            httpGet:
+              path: /status/ready
+              port: status
+            periodSeconds: 5
+            failureThreshold: 30
           readinessProbe:
             httpGet:
-              path: /status
-              port: admin
-            initialDelaySeconds: 5
+              path: /status/ready
+              port: status
             periodSeconds: 5
           livenessProbe:
             httpGet:
               path: /status
-              port: admin
+              port: status
             initialDelaySeconds: 15
             periodSeconds: 10
           volumeMounts:
@@ -391,7 +398,7 @@ Expected: pod `Running`; a lista de rotas do Kong mostra as 5 rotas (`users-logi
 
 - [ ] **Step 2b: Confirmar qual imagem/tag do Kong foi usada (se o pod não subir)**
 
-Se o pod ficar em `ImagePullBackOff`, a tag `kong:3.10` não existe no seu Docker: troque no `k8s/kong/kong-deployment.yaml` para `kong:3.9` (ou `kong:latest`), reaplique (`kubectl apply -f k8s/kong/kong-deployment.yaml`) e repita o Step 2.
+Se o pod ficar em `ImagePullBackOff`, a tag da imagem não existe no Docker Hub: confirme com `docker pull kong:<tag>` e troque no `k8s/kong/kong-deployment.yaml` (verificado em runtime: `kong:3.10` **não existe**; `kong:3.9`, `3.8`, `3.7` e `latest` existem), reaplique (`kubectl apply -f k8s/kong/kong-deployment.yaml`) e repita o Step 2.
 
 - [ ] **Step 3: Verificar 401 sem token**
 
@@ -494,3 +501,15 @@ git commit -m "docs: documenta o gateway Kong como ponto de entrada unico"
 - **Cobertura da spec (SP1):** gateway como única entrada (Tarefas 1 e 2) ✔; validação de JWT (Tarefa 3) ✔; roteamento para UsersAPI/CatalogAPI (Tarefas 2 e 3) ✔; configuração versionada no repositório de orquestração (Tarefas 2 e 3) ✔; ajuste do HTTPS redirect — verificado como **desnecessário** hoje (constraint registrada) ✔; documentação (Tarefa 4) ✔.
 - **Placeholders:** nenhum “TBD/TODO”; todos os comandos, YAML e valores (nomes de Service, portas, issuer, imagens, rotas, marcador `${JWT_SECRET}`) estão explícitos.
 - **Consistência de nomes:** `users-api`/`catalog-api` (Services), porta `80`, `targetPort: 8080`, `Secret kong-declarative-config`, `Secret users-api-secret/jwt-secret-key`, rotas `users-login`/`users-signup`/`users-protegida`/`catalog-jogos`/`catalog-biblioteca` — usados igualmente em todas as tarefas.
+
+## Correções pós-execução (verificadas em runtime em 2026-09-13)
+
+O plano foi executado com sucesso no cluster do Docker Desktop; os pontos abaixo são ajustes que a execução real exigiu e que já estão refletidos nos trechos acima e no repositório de orquestração:
+
+1. **Tag da imagem:** `kong:3.10` **não existe** no Docker Hub (`docker pull` → `not found`); o Deployment usa **`kong:3.9`** (existem também 3.8, 3.7 e `latest`). Com a tag inválida o pod fica em `ImagePullBackOff` e o gateway não sobe.
+2. **Admin API restrita:** `KONG_ADMIN_LISTEN=127.0.0.1:8001` (em DB-less a Admin API devolve a configuração declarativa inteira, incluindo `jwt_secrets`) e a saúde passou a usar a **Status API** em `KONG_STATUS_LISTEN=0.0.0.0:8100`, com `readinessProbe` em `/status/ready`, `livenessProbe` em `/status` e `startupProbe`.
+3. **Acesso à Admin API:** `kubectl port-forward deploy/kong 8001:8001` **funciona** mesmo com o bind em loopback (o port-forward entra no netns do pod) — verificado: `/status` = 200 e `/routes` lista as rotas. A imagem **não tem `curl`**; dentro do pod use `kong health` ou `kong config parse /kong/declarative/kong.yml`.
+4. **Exposição do gateway:** no Docker Desktop o `Service` `LoadBalancer` pode receber um **IP de rede** (ex.: `172.18.0.5`) em vez de `localhost`, e esse IP não é alcançável do host. Conferir sempre `kubectl get svc kong`; quando não for alcançável, usar `kubectl port-forward svc/kong 8000:8000` (e então `http://localhost:8000`).
+5. **Script de deploy:** além de checar o `$LASTEXITCODE` do apply e do restart, ele roda `kubectl rollout status deployment/kong --timeout=120s` e falha se o Kong não ficar pronto — sem isso, uma config inválida era reportada como sucesso.
+6. **Contrato do login:** `POST /api/auth/login` responde `200` com o token, `401` para senha incorreta e `400` quando o e-mail não existe (o `catch` genérico do controller) — confirmado em runtime.
+7. **Evidência de aceite obtida:** sem token em `/api/jogos`, `/api/biblioteca/<uuid>` e `GET /api/usuarios` → `401`; cadastro anônimo → `201` (duplicado → `400`); login → `200`; `/api/jogos` com `Bearer` → `200`; `localhost:30001` → conexão recusada; `<pod-ip>:8001` → inalcançável.
