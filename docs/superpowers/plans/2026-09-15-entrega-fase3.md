@@ -666,6 +666,14 @@ Checagens (cada uma incrementa `$falhas` quando falha, como no `verify-sp4-final
 #    existir, o preflight CRIA pelo gateway (POST /api/usuarios) e avisa -- o bloco do
 #    Gateway faz login ANTES do bloco de cadastro, entao o usuario precisa existir antes
 #    de apertar REC. Usar um par fixo e documentado no roteiro (ex.: demo@fcg.local).
+# 10) DADOS DE DEMONSTRACAO: o catalogo precisa de jogos para o dashboard mexer e para a
+#    compra do bloco de pagamentos. Se GET /api/jogos voltar vazio, o preflight:
+#      a) promove o usuario de demonstracao a Admin (UPDATE ... SET Role = 1 no SQL Server,
+#         como o plano do SP3 ja documentava), refaz o login e cria 2 jogos via POST /api/jogos;
+#      b) avisa na saida quantos jogos existem.
+#    Isto e obrigatorio porque o dado do SQL Server e volatil enquanto a Task 7 nao entrar
+#    (sem PVC, qualquer restart de container esvazia o banco) e porque o preflight e a unica
+#    coisa que garante o estado inicial antes da gravacao.
 ```
 
 Saída final: `TUDO PRONTO PARA GRAVAR` ou a lista de falhas + `exit 1`.
@@ -767,6 +775,175 @@ foreach ($r in 'fcg-orchestration','fcg-users-api','fcg-catalog-api','fcg-paymen
 git -C .fase2-repos\fcg-orchestration grep -n -I -E 'FCG@Password123|Fcg2024Test!|fcg-secret-key-2024' origin/master   # esperado: vazio
 gh pr list --repo gustavoaa-dev/fcg-orchestration --state open    # esperado: vazio
 ```
+
+---
+
+### Task 7: Persistência do SQL Server e do RabbitMQ (PVCs) — o estado não pode sumir a cada restart
+
+**Por que esta task existe (descoberta em runtime nas Tasks 1 e 2):** nem o `sqlserver` nem o `rabbitmq` montam volume algum — `kubectl get pvc` lista apenas `mongo-data` e `prometheus-data`. Em Kubernetes, um **restart de container recria o filesystem do container**, e as duas consequências apareceram na prática:
+
+- **o banco se foi:** em 15/09 o container do SQL Server reiniciou (`restartCount: 3`), o `FCG_Users` ficou com 1 usuário e o `FCG_Catalog` com 0 jogos — 14 h antes havia 6 jogos e vários usuários. O schema "volta" porque as APIs rodam `Database.Migrate()` no boot, o que **mascara** o problema: o dado não volta;
+- **o broker se foi junto:** as filas `notifications-user-created` e `notifications-payment-processed` (criadas pelo Terraform) desapareceram, o KEDA passou a `Ready=False` / `TriggerError` (`404 NOT_FOUND - no queue 'notifications-user-created' in vhost '/'`) e **a função serverless parou de subir** — sem sinal visível para quem só olha o pod da função. As exchanges do MassTransit voltaram sozinhas (os serviços as redeclaram ao reconectar); as do Terraform, não.
+
+A fase é avaliada por *persistência poliglota*, e dois dos serviços com estado não persistiam.
+
+**Files:**
+- Modify: `.fase2-repos/fcg-orchestration/k8s/sqlserver-deployment.yaml`
+- Modify: `.fase2-repos/fcg-orchestration/k8s/rabbitmq-deployment.yaml`
+- Modify: `.fase2-repos/fcg-orchestration/README.md`
+
+**Interfaces:**
+- Produces: PVCs `sqlserver-data` (montado em `/var/opt/mssql`) e `rabbitmq-data` (montado em `/var/lib/rabbitmq`), ambos `1Gi`, `storageClassName: standard`, `ReadWriteOnce`, com rótulo `app` igual ao do workload — o mesmo padrão de `mongo-data`.
+- **Valores medidos no cluster (não supor):** o `sqlserver` roda como **uid 10001 (`mssql`)** → precisa de `securityContext.fsGroup: 10001` para escrever num volume novo; o `rabbitmq` roda como **root (uid 0)** → não precisa de `fsGroup`.
+
+#### Parte A — SQL Server
+
+- [ ] **Step 1: Declarar o PVC** no topo do arquivo, espelhando `k8s/mongo-deployment.yaml:1-14`:
+
+```yaml
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: sqlserver-data
+  labels:
+    app: sqlserver
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: standard
+  resources:
+    requests:
+      storage: 1Gi
+---
+```
+
+- [ ] **Step 2: Montar o volume no Deployment** — três mudanças, com o mesmo cuidado que o manifesto do Mongo já documenta:
+
+```yaml
+spec:
+  replicas: 1
+  # O PVC e ReadWriteOnce: num rolling update o pod novo ficaria preso esperando o volume.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: sqlserver
+  template:
+    metadata:
+      labels:
+        app: sqlserver
+    spec:
+      # A imagem do mssql roda como uid 10001: sem fsGroup o volume novo vem root e o SQL Server nao sobe.
+      securityContext:
+        fsGroup: 10001
+      containers:
+        - name: sqlserver
+          # ... (inalterado) ...
+          volumeMounts:
+            - name: data
+              mountPath: /var/opt/mssql
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: sqlserver-data
+```
+
+- [ ] **Step 3: Aplicar e recriar o schema**
+
+Run:
+```powershell
+kubectl apply -f k8s/sqlserver-deployment.yaml
+kubectl rollout status deployment/sqlserver --timeout=300s
+# o volume e novo: o schema volta porque as APIs rodam Migrate() no boot
+kubectl rollout restart deployment/users-api deployment/catalog-api deployment/payments-api
+kubectl rollout status deployment/users-api --timeout=180s
+kubectl rollout status deployment/catalog-api --timeout=180s
+kubectl rollout status deployment/payments-api --timeout=180s
+```
+Expected: pod do `sqlserver` `1/1 Running` montando `sqlserver-data`, e os três Deployments prontos.
+
+- [ ] **Step 4: O banco funciona de novo?**
+
+Run:
+```powershell
+curl.exe -s -o NUL -w '%{http_code}\n' -X POST http://localhost:8000/api/usuarios -H "Content-Type: application/json" -d '{"nome":"Prova PVC","email":"prova-pvc@teste.com","senha":"Senha@123"}'
+curl.exe -s -o NUL -w '%{http_code}\n' -X POST http://localhost:8000/api/auth/login -H "Content-Type: application/json" -d '{"email":"prova-pvc@teste.com","senha":"Senha@123"}'
+```
+Expected: `201` e `200`.
+
+- [ ] **Step 5: A PROVA — apagar o pod do SQL Server não pode mais apagar o banco**
+
+Run:
+```powershell
+kubectl delete pod -l app=sqlserver
+kubectl rollout status deployment/sqlserver --timeout=300s
+curl.exe -s -o NUL -w '%{http_code}\n' -X POST http://localhost:8000/api/auth/login -H "Content-Type: application/json" -d '{"email":"prova-pvc@teste.com","senha":"Senha@123"}'
+```
+Expected: `200` — **antes desta task, este mesmo teste devolvia `{"mensagem":"Usuário não encontrado."}` com HTTP `400`.**
+
+#### Parte B — RabbitMQ
+
+- [ ] **Step 6: Declarar o PVC `rabbitmq-data`** (mesmo formato do Step 1, com `labels.app: rabbitmq`).
+
+- [ ] **Step 7: Montar em `/var/lib/rabbitmq` e trocar a estratégia**
+
+```yaml
+spec:
+  replicas: 1
+  # O PVC e ReadWriteOnce: num rolling update o pod novo ficaria preso esperando o volume.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: rabbitmq
+  template:
+    metadata:
+      labels:
+        app: rabbitmq
+    spec:
+      containers:
+        - name: rabbitmq
+          # ... (inalterado) ...
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/rabbitmq
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: rabbitmq-data
+```
+
+> Sem `securityContext`: o container do RabbitMQ roda como **root** (medido com `kubectl exec deploy/rabbitmq -- id`), então não há problema de permissão no volume novo. O `RABBITMQ_DEFAULT_USER`/`PASS` ficam como estão (**dívida conhecida e aceita**: `guest/guest` é a credencial padrão da imagem e trocá-la exigiria mexer no broker vivo, no MassTransit das 3 APIs e no Secret do KEDA — fora do escopo desta task).
+
+- [ ] **Step 8: Aplicar e repor as definições do broker**
+
+Run:
+```powershell
+kubectl apply -f k8s/rabbitmq-deployment.yaml
+kubectl rollout status deployment/rabbitmq --timeout=300s
+# volume novo: as definicoes do MassTransit voltam quando os servicos reconectam, e as do
+# Terraform voltam com o apply documentado no README de fcg-notifications-function
+# (imagem hashicorp/terraform:1.16.2 + kubeconfig reescrito + TF_VAR_rabbitmq_management_url
+#  + port-forward do management na 15672)
+kubectl exec deploy/rabbitmq -- rabbitmqctl list_queues name messages
+kubectl get scaledobject notifications-function -o json 2>&1 | ConvertFrom-Json | ForEach-Object { $_.status.conditions }
+```
+Expected: as filas `notifications-user-created`, `notifications-payment-processed` e `notifications-dead-letter` presentes, e `ScaledObject` com `Ready=True`.
+
+- [ ] **Step 9: A PROVA — apagar o pod do RabbitMQ e as filas continuarem existindo**
+
+Run:
+```powershell
+kubectl delete pod -l app=rabbitmq
+kubectl rollout status deployment/rabbitmq --timeout=300s
+kubectl exec deploy/rabbitmq -- rabbitmqctl list_queues name messages
+kubectl get scaledobject notifications-function -o json 2>&1 | ConvertFrom-Json | ForEach-Object { ($_.status.conditions | Where-Object { $_.type -eq 'Ready' }).status }
+```
+Expected: as três filas ainda existem e `Ready` = `True` — **antes desta task, as filas `notifications-*` desapareciam e o KEDA ficava em `TriggerError`.**
+
+- [ ] **Step 10: Documentar** no README (seção de persistência): os três serviços com estado do cluster agora têm PVC (`mongo-data`, `sqlserver-data`, `rabbitmq-data`), e o motivo — **em Kubernetes, restart de container descarta o filesystem do container**, então dado que precisa sobreviver mora em volume; o `prometheus-data` já era assim, e Loki/Redis seguem sem volume **de propósito** (documentado).
+
+- [ ] **Step 11: Commit + PR + merge** (branch `fix/pvc-estado`).
 
 ---
 
