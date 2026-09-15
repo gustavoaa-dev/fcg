@@ -1210,7 +1210,7 @@ curl.exe -s http://localhost:18081/metrics | Select-String '^cache_(hit|miss)'
 # esperado: cache_miss >= 1 e cache_hit >= 1 (o prometheus-net 8.2.1 exporta o nome EXATO registrado)
 # 2) a segunda chamada é mais rápida (comparar Measure-Command das duas)
 # 3) invalidação: POST /api/jogos com token de Admin deve zerar a chave catalog:games:all
-kubectl exec deploy/redis -- redis-cli get catalog:games:all   # (nil) logo após o POST
+kubectl exec deploy/redis -- redis-cli exists catalog:games:all   # 0 logo após o POST (use exists: "get" responde WRONGTYPE numa chave viva, porque o IDistributedCache grava hash)
 # 4) degradação: com o Redis fora, a API continua respondendo
 kubectl scale deployment/redis --replicas=0
 curl.exe -s -o NUL -w '%{http_code}' "http://localhost:18000/api/jogos" -H "Authorization: Bearer $token"   # 200
@@ -1226,7 +1226,7 @@ $sa = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String((kubectl get s
 kubectl exec deploy/sqlserver -- /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P $sa -C -Q "UPDATE FCG_Users.dbo.Users SET Role = 1 WHERE Email = 'jogador@fcg.com'"
 ```
 
-Depois: `POST /api/jogos` (201) → `redis-cli get catalog:games:all` = `(nil)` → `GET /api/jogos` volta a ser miss. E o registro anterior do hit continua válido como evidência.
+Depois: `POST /api/jogos` (201) → `redis-cli exists catalog:games:all` = `0` → `GET /api/jogos` volta a ser miss. E o registro anterior do hit continua válido como evidência.
 
 - [ ] **Step 9: Confirmar que o cache não quebrou a leitura do SQL (risco do novo construtor de `Game`)**
 
