@@ -3,3 +3,6 @@ FCG/
 **/bin/
 **/obj/
 *.csproj.user
+
+# Ledger e scratch do fluxo de desenvolvimento (nao versionados)
+.superpowers/
