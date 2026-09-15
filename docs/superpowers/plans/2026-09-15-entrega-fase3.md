@@ -594,7 +594,7 @@ Cada requisito da fase, onde ele está implementado e o comando que comprova —
 | **Persistência poliglota (NoSQL)** | `fcg-catalog-api` (`MongoDB.Driver`, `ReviewDocument`, `MongoReviewRepository`) | `PUT`/`GET /api/jogos/{id}/avaliacoes` (ver [Persistência poliglota e cache](#persistência-poliglota-e-cache)) |
 | **Cache distribuído (Redis)** | `fcg-catalog-api` (`CachedGameRepository`, `catalog:games:all`, `catalog:game:{id}`, TTL 60 s) | `kubectl exec deploy/redis -- redis-cli keys 'catalog:*'` e os contadores `cache_hit`/`cache_miss` no `/metrics` |
 | **Instrumentação nos microsserviços** | `prometheus-net` em `users-api`, `catalog-api` e `payments-api` | `kubectl port-forward svc/<api> 8080:80` + `curl.exe localhost:8080/metrics` |
-| **Segredos fora do repositório** | `.gitignore`, `.env.example`, seção [Segredos](#segredos) | `git grep -n 'FCG@Password123\|Fcg2024Test!'` → vazio |
+| **Segredos fora do repositório** | `.gitignore`, `.env.example`, seção [Segredos](#segredos) | `git grep -n -E 'Password=FCG@\|Fcg2024Test!' origin/master -- . ':!README.md'` → vazio (o `:!README.md` é necessário: a própria linha de comprovação contém o padrão e apareceria no resultado) |
 
 **Demonstração em vídeo:** *[link do vídeo]* — roteiro em [`docs/roteiro-video-fase3.md`](docs/roteiro-video-fase3.md).
 ```
@@ -772,7 +772,7 @@ foreach ($r in 'fcg-orchestration','fcg-users-api','fcg-catalog-api','fcg-paymen
   $p = "C:\Users\Gustavo\fcg\.fase2-repos\$r"
   "${r}: " + (git -C $p log --oneline -1 origin/master)
 }
-git -C .fase2-repos\fcg-orchestration grep -n -I -E 'FCG@Password123|Fcg2024Test!|fcg-secret-key-2024' origin/master   # esperado: vazio
+git -C .fase2-repos\fcg-orchestration grep -n -I -E 'Password=FCG@|Fcg2024Test!|fcg-secret-key-2024' origin/master -- . ':!README.md'   # esperado: vazio (o README fica de fora: ele documenta a propria busca e casaria com o padrao)
 gh pr list --repo gustavoaa-dev/fcg-orchestration --state open    # esperado: vazio
 ```
 
