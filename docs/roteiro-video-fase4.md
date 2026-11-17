@@ -321,21 +321,101 @@ Se a resposta ainda vier com o texto antigo, espere 10 segundos e repita: o pod 
 
 ## Bloco 7 — Repositórios e fechamento (12:30 a 14:00)
 
-**Na tela:** GitHub, três arquivos.
+### Preparo (antes de gravar, 5 min)
+
+Abra estas cinco abas no navegador, já logado no GitHub, nesta ordem. Deixe-as prontas para só alternar com `Ctrl+Tab`.
+
+1. Pipeline: `https://github.com/gustavoaa-dev/fcg-catalog-api/blob/master/.github/workflows/ci-cd.yml`
+2. Drivers: `https://github.com/gustavoaa-dev/fcg-catalog-api/blob/master/FCG.CatalogAPI.Infrastructure/FCG.CatalogAPI.Infrastructure.csproj`
+3. Mongo: `https://github.com/gustavoaa-dev/fcg-catalog-api/blob/master/FCG.CatalogAPI.Infrastructure/Repositories/MongoReviewRepository.cs`
+4. Cache: `https://github.com/gustavoaa-dev/fcg-catalog-api/blob/master/FCG.CatalogAPI.Infrastructure/Repositories/CachedGameRepository.cs`
+5. Kubernetes: `https://github.com/gustavoaa-dev/fcg-orchestration/blob/master/k8s/rabbitmq-deployment.yaml`
+
+### A tabela que você precisa cobrir
+
+| Requisito do enunciado | Arquivo | O que aparece |
+|---|---|---|
+| Definições de pipeline | `ci-cd.yml` | testes, build, push com SHA, rolling update |
+| Código com drivers NoSQL e Cache | `FCG.CatalogAPI.Infrastructure.csproj` | `MongoDB.Driver` e `Microsoft.Extensions.Caching.StackExchangeRedis` |
+| NoSQL integrado | `MongoReviewRepository.cs` | `IMongoCollection`, índice único, upsert |
+| Cache integrado | `CachedGameRepository.cs` | `IDistributedCache`, chave, TTL, contador de hit |
+| YAML de infraestrutura | `k8s/rabbitmq-deployment.yaml` | Secret por `secretKeyRef`, sem senha no texto |
+
+### Aba 1 — a pipeline (12:30)
 
 **Fala:**
 
-> Três arquivos que provam o que eu mostrei.
+> Cinco arquivos que provam o que eu mostrei. O primeiro é a esteira, versionada junto com o código.
 >
-> Esse é o arquivo da esteira, no próprio repositório. Ela está versionada como o código.
+> Aqui na linha 25 ela roda os testes. Se um teste falha, nada vai adiante.
 >
-> Esses são os manifestos do Kubernetes: os serviços, os volumes, o Elasticsearch e o segredo do broker.
+> Aqui ela publica a imagem com o número do commit. E aqui, no fim, ela manda o cluster usar a imagem nova e espera o rollout terminar.
+
+Aponte com o mouse, sem ler o arquivo inteiro: `Testes unitarios` (L25), `docker push ... github.sha` (L40), `kubectl set image` (L48) e `rollout status` (L50).
+
+### Aba 2 — os dois drivers (12:45)
+
+**Fala:**
+
+> Segundo arquivo: o projeto de infraestrutura do catálogo. Aqui estão os dois drivers que o enunciado pede.
 >
-> E esse é o código do índice de busca: ele monta a consulta com busca aproximada e o peso no nome.
+> `MongoDB.Driver` para o banco de documentos. E `Microsoft.Extensions.Caching.StackExchangeRedis` para o cache.
+
+### Aba 3 — como o NoSQL é usado (13:00)
+
+**Fala:**
+
+> Terceiro: o repositório de avaliações. Ele recebe a coleção tipada na linha 16, fala com o Mongo pelo driver oficial.
 >
-> O que ficou de fora, e eu prefiro dizer: infraestrutura como código com Terraform, um cofre gerenciado de segredos e o scanner de vulnerabilidade na imagem. Nenhum dos três era obrigatório, os dois primeiros estão no próximo passo natural.
+> Na linha 34 cria um índice único por jogo e usuário, então ninguém avalia o mesmo jogo duas vezes.
 >
-> O cluster pode ser desligado com um comando e o custo fixo fica em torno de cento e quarenta reais por mês. Obrigado.
+> E a escrita é upsert: a primeira avaliação cria, a segunda atualiza. Sem tabela extra, sem migração quando aparece uma tag nova.
+
+### Aba 4 — como o cache é usado (13:20)
+
+**Fala:**
+
+> Quarto: o cache. É o padrão cache-aside: a leitura tenta o Redis primeiro, e só vai no banco se não achar.
+>
+> A chave está na linha 18 e o tempo de vida na 19: sessenta segundos.
+>
+> O contador da linha 21 é o que aparece no Grafana como acerto e erro de cache.
+>
+> E o importante: se o Redis falhar, o código cai para o SQL. O cache nunca derruba a API.
+
+### Aba 5 — infraestrutura sem senha no texto (13:40)
+
+**Fala:**
+
+> Quinto: um dos manifestos do Kubernetes, o do broker. São dezenove no total: serviços, volumes, Elasticsearch, observabilidade.
+>
+> Repare nas linhas 48 a 57: usuário e senha vêm de um Secret. Não existe senha escrita no YAML nem no código. A mesma regra vale para as conexões de banco e para a chave do JWT.
+
+Se quiser, mostre a pasta inteira em `https://github.com/gustavoaa-dev/fcg-orchestration/tree/master/k8s` e role rápido.
+
+### Fechamento (13:50)
+
+**Fala:**
+
+> O que ficou de fora, e eu prefiro dizer: infraestrutura como código com Terraform, um cofre gerenciado de segredos e o scanner de vulnerabilidade na imagem. Nenhum dos três era obrigatório, e os dois primeiros são o próximo passo natural.
+>
+> O cluster pode ser desligado com um comando, e o custo fixo fica em torno de cento e quarenta reais por mês.
+>
+> Obrigado.
+
+### Se a internet do GitHub falhar
+
+Abra os mesmos arquivos no VS Code. São estes caminhos:
+
+```
+C:\Users\Gustavo\fcg\.fase2-repos\fcg-catalog-api\.github\workflows\ci-cd.yml
+C:\Users\Gustavo\fcg\.fase2-repos\fcg-catalog-api\FCG.CatalogAPI.Infrastructure\FCG.CatalogAPI.Infrastructure.csproj
+C:\Users\Gustavo\fcg\.fase2-repos\fcg-catalog-api\FCG.CatalogAPI.Infrastructure\Repositories\MongoReviewRepository.cs
+C:\Users\Gustavo\fcg\.fase2-repos\fcg-catalog-api\FCG.CatalogAPI.Infrastructure\Repositories\CachedGameRepository.cs
+C:\Users\Gustavo\fcg\.fase2-repos\fcg-orchestration\k8s\rabbitmq-deployment.yaml
+```
+
+Não precise mostrar o repositório do monólito neste bloco. Ele não é entrega da fase 4.
 
 ---
 
