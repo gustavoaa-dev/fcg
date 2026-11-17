@@ -231,6 +231,13 @@ Salve o arquivo com `Ctrl+S`.
 **Na tela:** terminal.
 
 ```powershell
+cd C:\Users\Gustavo\fcg\.fase2-repos\fcg-catalog-api
+git rev-parse --show-toplevel
+```
+
+Tem que imprimir `C:/Users/Gustavo/fcg/.fase2-repos/fcg-catalog-api`. Se imprimir `.../fcg`, você está no repositório do monólito — é a pasta errada, e o commit iria para o lugar errado. O projeto tem dois repositórios git: a raiz `fcg` (monólito e docs) e cada serviço dentro de `.fase2-repos`.
+
+```powershell
 git status --short
 ```
 
