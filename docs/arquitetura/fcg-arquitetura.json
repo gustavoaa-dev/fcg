@@ -1,0 +1,81 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "FCG — arquitetura na Azure (fase 4)",
+    "output": ".archify/architecture-fcg-20261116-211500/fcg-arquitetura.html",
+    "quality_profile": "showcase",
+    "locale": "pt-BR"
+  },
+  "components": [
+    { "id": "jogador", "type": "external", "label": "Jogador", "sublabel": "navegador", "pos": [20, 320], "size": [116, 62] },
+    { "id": "kong", "type": "security", "label": "Kong", "sublabel": "gateway :8000", "pos": [180, 320], "size": [124, 62] },
+
+    { "id": "users", "type": "backend", "label": "users-api", "sublabel": "cadastro + JWT", "pos": [380, 150], "size": [132, 64] },
+    { "id": "catalog", "type": "backend", "label": "catalog-api", "sublabel": "catálogo + busca", "pos": [380, 330], "size": [132, 64] },
+    { "id": "payments", "type": "backend", "label": "payments-api", "sublabel": "consome a fila", "pos": [380, 520], "size": [132, 64] },
+    { "id": "notif", "type": "backend", "label": "notifications", "sublabel": "KEDA, escala a zero", "pos": [380, 690], "size": [132, 64] },
+
+    { "id": "rabbit", "type": "messagebus", "label": "RabbitMQ", "sublabel": "filas + DLQ", "pos": [620, 430], "size": [130, 64] },
+
+    { "id": "sql", "type": "database", "label": "SQL Server", "sublabel": "Users · Catalog · Payments", "pos": [860, 150], "size": [150, 64] },
+    { "id": "mongo", "type": "database", "label": "MongoDB", "sublabel": "avaliações", "pos": [860, 300], "size": [150, 64] },
+    { "id": "redis", "type": "database", "label": "Redis", "sublabel": "cache 60 s", "pos": [860, 450], "size": [150, 64] },
+    { "id": "es", "type": "database", "label": "Elasticsearch", "sublabel": "índice fuzzy", "pos": [860, 600], "size": [150, 64] }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "Azure · eastus · AKS (2 nós D2s_v4)",
+      "wraps": ["kong", "users", "catalog", "payments", "notif", "rabbit", "sql", "mongo", "redis", "es"],
+      "pad": 22
+    }
+  ],
+  "connections": [
+    { "from": "jogador", "to": "kong", "label": "HTTPS", "variant": "emphasis" },
+    { "from": "kong", "to": "users", "label": "/api/auth" },
+    { "from": "kong", "to": "catalog", "label": "/api/jogos" },
+
+    { "from": "users", "to": "sql", "label": "FCG_Users" },
+    { "from": "catalog", "to": "mongo", "label": "avaliações" },
+    { "from": "catalog", "to": "redis", "label": "cache-aside" },
+    { "from": "catalog", "to": "es", "label": "indexa", "variant": "dashed" },
+
+    { "from": "users", "to": "rabbit", "label": "UserCreated", "variant": "dashed" },
+    { "from": "catalog", "to": "rabbit", "label": "OrderPlaced", "variant": "dashed" },
+    { "from": "rabbit", "to": "payments", "label": "consome", "variant": "dashed" },
+    { "from": "payments", "to": "rabbit", "label": "PaymentProcessed", "variant": "dashed" },
+    { "from": "rabbit", "to": "notif", "label": "notifica", "variant": "dashed" }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Leitura do desenho",
+      "items": [
+        "Tudo dentro da borda roda no cluster gerenciado, não em máquina avulsa",
+        "Kong é o único ponto exposto: LoadBalancer na porta 8000",
+        "Setas tracejadas são eventos assíncronos via RabbitMQ",
+        "Um SQL Server com três bancos: um por serviço que precisa de transação"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "Por que quatro persistências",
+      "items": [
+        "SQL Server: dado de negócio com transação e esquema fixo",
+        "MongoDB: avaliação com tags variáveis, sem migração a cada campo",
+        "Redis: cópia de 60 s da listagem; se cair, a API degrada para o SQL",
+        "Elasticsearch: busca independente, tolera erro de digitação"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Entrega",
+      "items": [
+        "GitHub Actions constrói, testa, publica no ACR e faz rolling update",
+        "Credenciais do broker vêm de Secret do Kubernetes",
+        "Imagem com tag do commit, então cada deploy é rastreável"
+      ]
+    }
+  ]
+}
