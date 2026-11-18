@@ -124,3 +124,27 @@ execução com TDD (`test-driven-development`) + `verification-before-completion
 - Smoke tests manuais: `.\testes-api.ps1` (requer API rodando; assume usuário admin manual)
 
 **2026-09-09:** direção aprovada; spec em `docs/superpowers/specs/2026-09-09-correcao-monolito-design.md` e plano de implementação em `docs/superpowers/plans/2026-09-09-correcao-monolito.md`. Estado: em implementação.
+
+## 8. Skills de estilo instaladas (2026-11-04)
+
+Instaladas em `C:\Users\Gustavo\.dsh\skills` (nível de usuário, valem para toda sessão — igual ao Superpowers). Pendência de estilo, não de metodologia: nenhuma delas substitui o fluxo `brainstorming` → `writing-plans` → TDD que o projeto usa.
+
+- **ponytail** (6): `ponytail`, `ponytail-audit`, `ponytail-debt`, `ponytail-gain`, `ponytail-help`, `ponytail-review` — menor mudança completa; dívida assumida fica marcada com comentário `shortcut:` (o `ponytail-debt` lista esses comentários).
+- **caveman** (7): `caveman`, `ultracave`, `megacave`, `caveman-review`, `caveman-commit`, `cavecrew`, `caveman-help` — voz comprimida, revisão e mensagem de commit comprimidas, delegação a subagentes.
+
+Deliberadamente **não** instaladas do repo `JuliusBrussee/caveman`:
+
+- `caveman-compress` — não é só prompt: envia o texto do arquivo ao provedor de modelo e reescreve arquivos de memória no lugar.
+- `caveman-stats` — lê os logs de sessão do Claude Code, que não existem neste host.
+- `caveman-setup`, `caveman-discover`, `caveman-optimize`, `caveman-manage`, `caveman-evidence-review` — exigem o gateway de terceiros `gateway.caveman.so` e/ou o binário Go `caveman`.
+- `investigate-first`, `lean-build`, `migration`, `safe-refactor`, `surgical-patch`, `verify-and-stop` — são prompt puro, mas ativam por classificação automática de tarefa (hooks), que o DSH não roda; podem ser adicionadas depois se forem invocadas pelo nome.
+
+Ativação: nomear a skill na conversa ou usar `/ponytail`, `/caveman`. Sem auto-bootstrap (o DSH não roda hooks).
+
+Para reinstalar/atualizar: nesta máquina o `git clone` HTTPS só funciona com o backend OpenSSL — o schannel padrão falha com `schannel: AcquireCredentialsHandle failed: SEC_E_NO_CREDENTIALS`:
+
+```powershell
+git -c http.sslBackend=openssl clone --depth 1 https://github.com/DietrichGebert/ponytail.git $env:TEMP\ponytail
+git -c http.sslBackend=openssl clone --depth 1 https://github.com/JuliusBrussee/caveman.git $env:TEMP\caveman
+# copiar apenas os 13 diretórios de skill listados acima para C:\Users\Gustavo\.dsh\skills
+```
