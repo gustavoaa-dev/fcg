@@ -4,7 +4,7 @@ Plataforma de gerenciamento de usuários, catálogo de jogos e biblioteca pessoa
 
 [![ci-cd catalog](https://github.com/gustavoaa-dev/fcg-catalog-api/actions/workflows/ci-cd.yml/badge.svg)](https://github.com/gustavoaa-dev/fcg-catalog-api/actions/workflows/ci-cd.yml)
 
-## 🏗️ Arquitetura de Microsserviços (Fase 2)
+## Arquitetura de Microsserviços (Fase 2)
 
 A plataforma evoluiu para uma arquitetura de microsserviços orientada a eventos:
 
@@ -22,7 +22,7 @@ Os microsserviços se comunicam via **RabbitMQ** utilizando eventos assíncronos
 
 ---
 
-## ☁️ Fases 3 e 4 — gateway, observabilidade, nuvem, CI/CD e busca
+## Fases 3 e 4 — gateway, observabilidade, nuvem, CI/CD e busca
 
 ![Arquitetura na Azure](docs/arquitetura/fcg-arquitetura.png)
 
@@ -44,8 +44,6 @@ Documentos desta fase, neste repositório:
 
 - [Diagrama da arquitetura](docs/arquitetura/fcg-arquitetura.html) — fonte em [JSON](docs/arquitetura/fcg-arquitetura.json)
 - [Plano de implementação](docs/superpowers/plans/2026-11-08-fase4-cloud-cicd-busca.md)
-- [Roteiro do vídeo de entrega](docs/roteiro-video-fase4.md)
-- [Script de verificação do ambiente](preparar-gravacao.ps1)
 
 Serviços no ar (quando o cluster está ligado): `kubectl get svc kong` mostra o IP público na porta 8000; `az aks stop -n fcg-aks -g fcg-rg` desliga o compute entre sessões.
 

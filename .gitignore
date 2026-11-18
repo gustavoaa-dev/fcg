@@ -7,11 +7,7 @@ FCG/
 # Ledger e scratch do fluxo de desenvolvimento (nao versionados)
 .superpowers/
 
-# credenciais locais da gravacao
-.video/
-.archify/
-.tools/
-
-# scratch de sessoes anteriores
+# Diretorios de trabalho locais
 .dsh-scratch-*/
 .task8-scratch/
+.tools/
