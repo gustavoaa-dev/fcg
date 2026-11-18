@@ -2,6 +2,8 @@
 
 Plataforma de gerenciamento de usuários, catálogo de jogos e biblioteca pessoal.
 
+[![ci-cd catalog](https://github.com/gustavoaa-dev/fcg-catalog-api/actions/workflows/ci-cd.yml/badge.svg)](https://github.com/gustavoaa-dev/fcg-catalog-api/actions/workflows/ci-cd.yml)
+
 ## 🏗️ Arquitetura de Microsserviços (Fase 2)
 
 A plataforma evoluiu para uma arquitetura de microsserviços orientada a eventos:
@@ -17,6 +19,35 @@ A plataforma evoluiu para uma arquitetura de microsserviços orientada a eventos
 Os microsserviços se comunicam via **RabbitMQ** utilizando eventos assíncronos (`UserCreatedEvent`, `OrderPlacedEvent`, `PaymentProcessedEvent`).
 
 > Para instruções de execução com Docker e Kubernetes, consulte o [repositório de orquestração](https://github.com/gustavoaa-dev/fcg-orchestration).
+
+---
+
+## ☁️ Fases 3 e 4 — gateway, observabilidade, nuvem, CI/CD e busca
+
+![Arquitetura na Azure](docs/arquitetura/fcg-arquitetura.png)
+
+O que foi entregue depois da quebra em microsserviços:
+
+| Fase | Entrega | Onde ver |
+|---|---|---|
+| **3** | Kong como API Gateway, observabilidade (Prometheus, Grafana, Loki) e notificação serverless com KEDA | [fcg-orchestration](https://github.com/gustavoaa-dev/fcg-orchestration), seção "Atendimento dos requisitos da Fase 3" |
+| **4** | Kubernetes gerenciado (AKS) com imagem no ACR, pipeline CI/CD no GitHub Actions, busca com Elasticsearch e segredos fora do código | [fcg-orchestration](https://github.com/gustavoaa-dev/fcg-orchestration), seção "Atendimento dos requisitos da Fase 4" |
+
+Persistência da fase 4, por serviço:
+
+- **SQL Server** — usuários, catálogo e pagamentos (transação e esquema fixo)
+- **MongoDB** — avaliações (`fcg-catalog-api`, `MongoDB.Driver`, coleção `avaliacoes`)
+- **Redis** — cache-aside da listagem, TTL 60 s, degrada para o SQL se cair
+- **Elasticsearch** — índice de busca independente, fuzzy e ordenação por relevância
+
+Documentos desta fase, neste repositório:
+
+- [Diagrama da arquitetura](docs/arquitetura/fcg-arquitetura.html) — fonte em [JSON](docs/arquitetura/fcg-arquitetura.json)
+- [Plano de implementação](docs/superpowers/plans/2026-11-08-fase4-cloud-cicd-busca.md)
+- [Roteiro do vídeo de entrega](docs/roteiro-video-fase4.md)
+- [Script de verificação do ambiente](preparar-gravacao.ps1)
+
+Serviços no ar (quando o cluster está ligado): `kubectl get svc kong` mostra o IP público na porta 8000; `az aks stop -n fcg-aks -g fcg-rg` desliga o compute entre sessões.
 
 ---
 
